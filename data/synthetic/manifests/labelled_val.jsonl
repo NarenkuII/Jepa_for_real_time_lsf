@@ -1,0 +1,3 @@
+{"id": "val_0000", "video": "synthetic://val_0000", "keypoints": "data/synthetic/keypoints/val_0000.npz", "text_fr": "Bonjour.", "signer_id": "synthetic_signer_0", "source": "synthetic", "split": "val"}
+{"id": "val_0001", "video": "synthetic://val_0001", "keypoints": "data/synthetic/keypoints/val_0001.npz", "text_fr": "Demain, je vais à l'école.", "signer_id": "synthetic_signer_1", "source": "synthetic", "split": "val"}
+{"id": "val_0002", "video": "synthetic://val_0002", "keypoints": "data/synthetic/keypoints/val_0002.npz", "text_fr": "Je veux boire de l'eau.", "signer_id": "synthetic_signer_2", "source": "synthetic", "split": "val"}

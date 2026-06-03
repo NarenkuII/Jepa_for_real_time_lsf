@@ -1,0 +1,2 @@
+{"id":"clip_000001","video":"data/raw/labelled/video_001.mp4","start":175.72,"end":181.36,"text_fr":"Demain, je vais à l'école.","keypoints":"data/keypoints/labelled/clip_000001.npz","signer_id":"signer_001","source":"corpus_name","split":"train","quality_stats":{"missing_ratio":0.04,"left_hand_presence":0.91,"right_hand_presence":0.88,"face_presence":0.96}}
+

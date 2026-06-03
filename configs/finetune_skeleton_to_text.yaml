@@ -1,0 +1,4 @@
+inherits: configs/default.yaml
+experiment:
+  name: finetune_skeleton_to_text
+

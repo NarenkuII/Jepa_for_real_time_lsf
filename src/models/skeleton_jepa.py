@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import torch
+from torch import nn
+
+from src.models.encoders import build_skeleton_encoder
+from src.models.predictor import LatentPredictor
+
+
+@dataclass
+class JEPAMask:
+    context_mask: torch.Tensor
+    target_mask: torch.Tensor
+    strategy: str
+
+
+def temporal_block_mask(batch: int, frames: int, ratio: float = 0.4, device=None) -> JEPAMask:
+    target = torch.zeros(batch, frames, dtype=torch.bool, device=device)
+    width = max(1, int(frames * ratio))
+    start_max = max(1, frames - width)
+    starts = torch.randint(0, start_max, (batch,), device=device)
+    for b, s in enumerate(starts.tolist()):
+        target[b, s : s + width] = True
+    return JEPAMask(context_mask=~target, target_mask=target, strategy="temporal_block")
+
+
+def temporal_future_mask(batch: int, frames: int, visible_ratio: float = 0.67, device=None) -> JEPAMask:
+    cut = max(1, int(frames * visible_ratio))
+    target = torch.zeros(batch, frames, dtype=torch.bool, device=device)
+    target[:, cut:] = True
+    if target.sum() == 0:
+        target[:, -1] = True
+    return JEPAMask(context_mask=~target, target_mask=target, strategy="temporal_future")
+
+
+def cosine_latent_loss(pred: torch.Tensor, target: torch.Tensor, target_mask: torch.Tensor) -> torch.Tensor:
+    loss = 1.0 - torch.nn.functional.cosine_similarity(pred, target.detach(), dim=-1)
+    denom = target_mask.float().sum().clamp_min(1.0)
+    return (loss * target_mask.float()).sum() / denom
+
+
+class SkeletonJEPA(nn.Module):
+    def __init__(self, num_joints: int, in_features: int, d_model: int = 256, num_layers: int = 2, num_heads: int = 4, dropout: float = 0.1, predictor_hidden_dim: int = 512, encoder_type: str = "temporal_transformer", ema_tau: float = 0.996):
+        super().__init__()
+        self.context_encoder = build_skeleton_encoder(encoder_type, num_joints, in_features, d_model, num_layers, num_heads, dropout)
+        self.target_encoder = build_skeleton_encoder(encoder_type, num_joints, in_features, d_model, num_layers, num_heads, dropout)
+        self.predictor = LatentPredictor(d_model, predictor_hidden_dim)
+        self.ema_tau = ema_tau
+        self._init_target()
+
+    @torch.no_grad()
+    def _init_target(self) -> None:
+        for p_t, p_c in zip(self.target_encoder.parameters(), self.context_encoder.parameters()):
+            p_t.data.copy_(p_c.data)
+            p_t.requires_grad_(False)
+
+    @torch.no_grad()
+    def update_target_encoder(self, tau: float | None = None) -> None:
+        tau = self.ema_tau if tau is None else tau
+        for p_t, p_c in zip(self.target_encoder.parameters(), self.context_encoder.parameters()):
+            p_t.data.mul_(tau).add_(p_c.data, alpha=1 - tau)
+
+    def forward(self, x: torch.Tensor, mask: JEPAMask | None = None, padding_mask: torch.Tensor | None = None) -> dict:
+        b, t, _, _ = x.shape
+        if mask is None:
+            mask = temporal_block_mask(b, t, device=x.device)
+        context_x = x.clone()
+        context_x[mask.target_mask] = 0.0
+        context_latent = self.context_encoder(context_x, padding_mask)
+        pred = self.predictor(context_latent)
+        with torch.no_grad():
+            target = self.target_encoder(x, padding_mask)
+        loss = cosine_latent_loss(pred, target, mask.target_mask)
+        return {"loss": loss, "predicted_latent": pred, "target_latent": target, "mask": mask}
+
+    @staticmethod
+    def collapse_stats(latent: torch.Tensor) -> dict[str, float]:
+        std = latent.detach().std(dim=(0, 1)).mean()
+        norm = latent.detach().norm(dim=-1).mean()
+        return {"embedding_std": float(std.cpu()), "embedding_norm": float(norm.cpu()), "collapse_score": float((1.0 / std.clamp_min(1e-6)).cpu())}
+

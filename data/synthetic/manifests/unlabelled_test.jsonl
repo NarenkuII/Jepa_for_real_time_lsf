@@ -1,0 +1,3 @@
+{"id": "test_0000", "video": "synthetic://test_0000", "keypoints": "data/synthetic/keypoints/test_0000.npz", "signer_id": "synthetic_signer_0", "source": "synthetic", "split": "test"}
+{"id": "test_0001", "video": "synthetic://test_0001", "keypoints": "data/synthetic/keypoints/test_0001.npz", "signer_id": "synthetic_signer_1", "source": "synthetic", "split": "test"}
+{"id": "test_0002", "video": "synthetic://test_0002", "keypoints": "data/synthetic/keypoints/test_0002.npz", "signer_id": "synthetic_signer_2", "source": "synthetic", "split": "test"}

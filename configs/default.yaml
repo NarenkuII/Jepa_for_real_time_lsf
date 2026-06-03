@@ -1,0 +1,140 @@
+project:
+  name: "Jepa_for_real_time_lsf"
+  seed: 42
+  output_dir: "runs"
+data:
+  root: "data"
+  unlabelled_manifest: "data/manifests/unlabelled_videos.jsonl"
+  labelled_manifest: "data/manifests/labelled_segments.jsonl"
+  labelled_keypoints_manifest: "data/manifests/labelled_segments_with_keypoints.jsonl"
+  topology: "mediapipe_holistic"
+  fps_target: 25
+  window_size: 96
+  window_stride: 48
+  min_duration_sec: 0.5
+  max_duration_sec: 20.0
+  min_frames: 16
+  max_frames: 512
+  split_by_signer: true
+keypoints:
+  use_pose: true
+  use_face: true
+  use_hands: true
+  include_z: true
+  include_confidence: true
+  include_valid_mask: true
+  face_subset: "sign_relevant"
+  mirror_webcam: false
+normalization:
+  global_image_coordinates: true
+  body_relative: true
+  face_relative_to_nose: true
+  hands_relative_to_wrists: true
+  add_bone_vectors: true
+  add_velocity: true
+  add_acceleration: true
+  smoothing:
+    enabled: true
+    method: "one_euro"
+  missing_values:
+    min_confidence: 0.35
+    strategy: "mask_and_interpolate"
+    interpolate_max_gap: 8
+    fill_long_gaps: "zeros_with_mask"
+jepa:
+  encoder_type: "temporal_transformer"
+  d_model: 256
+  num_layers: 6
+  num_heads: 8
+  dropout: 0.1
+  predictor_hidden_dim: 512
+  target_encoder_ema:
+    enabled: true
+    base_tau: 0.996
+    final_tau: 1.0
+  masking:
+    temporal_future: true
+    temporal_block: true
+    articulator_masking: true
+    joint_group_masking: true
+    motion_aware_masking: true
+    mask_ratio_min: 0.25
+    mask_ratio_max: 0.65
+  loss:
+    type: "cosine"
+    vicreg_regularization: true
+    vicreg_weight: 0.05
+pretraining:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.0003
+  weight_decay: 0.05
+  warmup_epochs: 10
+  precision: "bf16"
+  num_workers: 4
+  validate_every: 1
+  save_every: 5
+text:
+  language: "fr"
+  tokenizer_type: "sentencepiece"
+  vocab_size: 8000
+  lowercase: false
+  normalize_punctuation: true
+  max_text_length: 128
+  special_tokens:
+    pad: "<PAD>"
+    bos: "<BOS>"
+    eos: "<EOS>"
+    unk: "<UNK>"
+skeleton_text_alignment:
+  enabled: true
+  skeleton_embedding_dim: 256
+  text_embedding_dim: 256
+  projection_dim: 256
+  temperature: 0.07
+  batch_size: 64
+  epochs: 30
+  learning_rate: 0.0001
+skeleton_to_text:
+  pretrained_jepa_checkpoint: null
+  freeze_encoder_epochs: 5
+  encoder_output_dim: 256
+  decoder_type: "transformer"
+  decoder_layers: 4
+  decoder_heads: 8
+  decoder_dim: 256
+  dropout: 0.1
+  label_smoothing: 0.1
+  teacher_forcing: true
+  scheduled_sampling: false
+  beam_size: 5
+  length_penalty: 0.8
+finetuning:
+  batch_size: 16
+  epochs: 80
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  gradient_clip_val: 1.0
+  early_stopping_patience: 10
+  num_workers: 4
+metrics:
+  bleu: true
+  chrf: true
+  rouge_l: true
+  wer: true
+  cer: true
+  exact_match: true
+realtime:
+  camera_id: 0
+  buffer_size: 128
+  stride: 16
+  display_skeleton: true
+  display_confidence: true
+  min_prediction_confidence: 0.4
+  max_generated_tokens: 64
+logging:
+  use_tensorboard: true
+  use_wandb: false
+  save_csv_logs: true
+  save_html_report: true
+
