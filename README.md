@@ -21,11 +21,9 @@ Deux types de données sont supportés :
 - Type A : vidéos non annotées, utilisées pour pré-entraîner Skeleton-JEPA.
 - Type B : vidéos ou segments alignés avec une phrase française, utilisés pour l'alignement skeleton-text optionnel et le fine-tuning génératif.
 
-## Pourquoi pas CTC comme loss principale
+## Objectif génératif
 
-CTC suppose un alignement monotone entre l'entrée temporelle et les tokens de sortie. Ce n'est pas une bonne hypothèse pour prédire directement une phrase française depuis la LSF : ordre syntaxique différent, omissions, reformulations, grammaire spatiale et informations faciales ne correspondent pas forcément mot à mot.
-
-La loss principale du projet est donc une cross entropy token-level avec teacher forcing dans une architecture encoder-decoder. CTC n'est prévu que comme extension future si un dataset glossé ou des pseudo-unités gestuelles alignables deviennent disponibles.
+La tâche principale est une traduction directe `keypoints -> phrase française` avec une architecture encoder-decoder et une cross entropy token-level avec teacher forcing.
 
 ## Skeleton-JEPA
 
@@ -161,5 +159,4 @@ Les métriques incluent JEPA latent loss, variance embeddings, normes, collapse 
 
 ## Extensions futures
 
-Si des glosses deviennent disponibles, ajouter une branche `keypoints -> glosses` avec CTC uniquement sur `gloss_sequence`. Si des timestamps deviennent disponibles, ajouter une classification frame-level ou segment-level. Les pseudo-unités `SU_0001` ne sont pas des glosses LSF et ne doivent pas être présentées comme vérité linguistique.
-
+Si des glosses ou timestamps deviennent disponibles, ajouter des branches dédiées `keypoints -> glosses`, classification frame-level ou segment-level. Les pseudo-unités `SU_0001` ne sont pas des glosses LSF et ne doivent pas être présentées comme vérité linguistique.
