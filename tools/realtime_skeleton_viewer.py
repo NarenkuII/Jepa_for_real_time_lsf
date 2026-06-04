@@ -60,6 +60,10 @@ FACE_SIGN_RELEVANT = (
     324,
 )
 
+POSE_HAND_DUPLICATES = {17, 18, 19, 20, 21, 22}
+POSE_FACE_DUPLICATES = set(range(0, 11))
+BODY_DEBUG_POSE_INDICES = (11, 12, 13, 14, 15, 16, 23, 24)
+
 
 def require_cv_mediapipe():
     try:
@@ -227,9 +231,17 @@ def draw_raw_internal_overlay(cv2, frame, raw: dict, topology: KeypointTopology,
     for a, b in topology.edges:
         if a < len(pix) and b < len(pix) and valid[a] and valid[b]:
             cv2.line(frame, tuple(pix[a]), tuple(pix[b]), (70, 230, 100), 2, cv2.LINE_AA)
-    for name, color in (("pose", (80, 180, 255)), ("face", (255, 180, 80)), ("left_hand", (80, 255, 120)), ("right_hand", (80, 255, 120))):
+    colors = {
+        "pose": (255, 130, 40),
+        "face": (40, 210, 255),
+        "left_hand": (80, 255, 80),
+        "right_hand": (80, 255, 80),
+    }
+    for name, color in colors.items():
         radius = 1 if name == "face" and full_face else 3
         for idx in topology.groups[name].indices:
+            if name == "pose" and idx in POSE_HAND_DUPLICATES | POSE_FACE_DUPLICATES:
+                continue
             if idx < len(pix) and valid[idx]:
                 cv2.circle(frame, tuple(pix[idx]), radius, color, -1, cv2.LINE_AA)
 
@@ -248,7 +260,6 @@ def draw_points(cv2, canvas, points: np.ndarray, valid: np.ndarray, rect: tuple[
     cx = x + w // 2
     cy = y + h // 2
     xy = points[:, :2].copy()
-    xy[:, 1] *= -1.0
     pix = np.zeros((len(xy), 2), dtype=np.int32)
     pix[:, 0] = (cx + xy[:, 0] * scale).astype(np.int32)
     pix[:, 1] = (cy + xy[:, 1] * scale).astype(np.int32)
@@ -261,7 +272,7 @@ def draw_points(cv2, canvas, points: np.ndarray, valid: np.ndarray, rect: tuple[
 
 
 def pose_edges_for_group(topology: KeypointTopology) -> tuple[tuple[int, int], ...]:
-    pose_indices = list(topology.groups["pose"].indices)
+    pose_indices = list(BODY_DEBUG_POSE_INDICES)
     local = {global_idx: local_idx for local_idx, global_idx in enumerate(pose_indices)}
     return tuple((local[a], local[b]) for a, b in topology.edges if a in local and b in local)
 
@@ -287,7 +298,7 @@ def seated_friendly_pose(raw: dict, topology: KeypointTopology) -> tuple[np.ndar
             mode = "torso-centered"
 
     scale = max(float(shoulder_width), 1e-4)
-    pose_idx = list(topology.groups["pose"].indices)
+    pose_idx = list(BODY_DEBUG_POSE_INDICES)
     pose = (xyz[pose_idx] - center[None, :]) / scale
     return pose, valid[pose_idx], scale, mode
 
@@ -368,7 +379,7 @@ def make_debug_canvas(cv2, raw: dict, norm: dict, topology: KeypointTopology, st
     hand_rel = norm_frame[:, 9:12]
 
     pose, pose_valid, pose_scale, pose_mode = seated_friendly_pose(raw, topology)
-    draw_panel_title(cv2, canvas, f"Pose only normalized ({pose_mode}, scale=shoulders)", 20, 20, 500, 360)
+    draw_panel_title(cv2, canvas, f"Body pose normalized ({pose_mode}, scale=shoulders)", 20, 20, 500, 360)
     draw_points(cv2, canvas, pose, pose_valid, (35, 58, 470, 300), (80, 190, 255), pose_edges_for_group(topology), scale=135.0)
 
     draw_panel_title(cv2, canvas, f"Face normalized zoom ({int(stats['face_joints'])} pts, nose/body scale)", 540, 20, 360, 360)
@@ -420,7 +431,8 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--model_complexity", type=int, default=1)
-    parser.add_argument("--full_face", action="store_true", help="Use all 468 face landmarks in the normalized/debug JEPA view.")
+    parser.add_argument("--full_face", action="store_true", default=True, help="Use all 468 face landmarks. This is the default.")
+    parser.add_argument("--face_subset", action="store_true", help="Use only the small sign-relevant face subset instead of all 468 face points.")
     parser.add_argument("--draw_face_mesh", action="store_true", help="Draw dense face mesh on raw webcam overlay. Default draws contours only.")
     parser.add_argument("--buffer_size", type=int, default=128)
     parser.add_argument("--save_dir", default="reports/webcam_debug")
@@ -428,6 +440,7 @@ def main() -> None:
     parser.add_argument("--model_dir", default="checkpoints/mediapipe")
     parser.add_argument("--delegate", choices=["cpu", "gpu"], default="gpu", help="MediaPipe Tasks delegate. GPU is attempted by default in tasks backend.")
     args = parser.parse_args()
+    full_face = args.full_face and not args.face_subset
 
     cv2, mp = require_cv_mediapipe()
     cfg = load_config(args.config)
@@ -481,7 +494,7 @@ def main() -> None:
             timestamp_ms = int(frame_index * 1000 / 30)
             result = holistic.process(rgb) if backend_name == "solutions" else holistic.process(rgb, timestamp_ms)
             frame_index += 1
-            raw, topology = holistic_to_internal(result, full_face=args.full_face)
+            raw, topology = holistic_to_internal(result, full_face=full_face)
             keypoint_buffer.append(raw["keypoints"][0])
             confidence_buffer.append(raw["confidence"][0])
             valid_buffer.append(raw["valid_mask"][0])
@@ -498,7 +511,7 @@ def main() -> None:
             if backend_name == "solutions":
                 draw_raw_overlay(cv2, mp, raw_view, result, draw_face_mesh=args.draw_face_mesh)
             else:
-                draw_raw_internal_overlay(cv2, raw_view, raw, topology, args.full_face)
+                draw_raw_internal_overlay(cv2, raw_view, raw, topology, full_face)
             dt = time.perf_counter() - t0
             frame_times.append(dt)
             fps = 1.0 / max(np.mean(frame_times), 1e-6)
