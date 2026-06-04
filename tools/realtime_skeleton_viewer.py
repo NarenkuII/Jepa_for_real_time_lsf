@@ -260,6 +260,38 @@ def draw_points(cv2, canvas, points: np.ndarray, valid: np.ndarray, rect: tuple[
             cv2.circle(canvas, tuple(p), 2, color, -1, cv2.LINE_AA)
 
 
+def pose_edges_for_group(topology: KeypointTopology) -> tuple[tuple[int, int], ...]:
+    pose_indices = list(topology.groups["pose"].indices)
+    local = {global_idx: local_idx for local_idx, global_idx in enumerate(pose_indices)}
+    return tuple((local[a], local[b]) for a, b in topology.edges if a in local and b in local)
+
+
+def seated_friendly_pose(raw: dict, topology: KeypointTopology) -> tuple[np.ndarray, np.ndarray, float, str]:
+    xyz = raw["keypoints"][0, :, :3]
+    valid = raw["valid_mask"][0]
+    lm = topology.landmarks
+    left_shoulder = xyz[lm["left_shoulder"]]
+    right_shoulder = xyz[lm["right_shoulder"]]
+    shoulder_center = (left_shoulder + right_shoulder) * 0.5
+    shoulder_width = np.linalg.norm(left_shoulder - right_shoulder)
+
+    hips_ok = bool(valid[lm["left_hip"]] and valid[lm["right_hip"]])
+    center = shoulder_center.copy()
+    mode = "shoulder-centered"
+    if hips_ok:
+        hip_center = (xyz[lm["left_hip"]] + xyz[lm["right_hip"]]) * 0.5
+        torso_height = np.linalg.norm(shoulder_center - hip_center)
+        # When seated/cropped, hip landmarks often jump below the frame. Do not let that destroy the debug view.
+        if shoulder_width > 1e-6 and torso_height < shoulder_width * 1.8:
+            center = (shoulder_center + hip_center) * 0.5
+            mode = "torso-centered"
+
+    scale = max(float(shoulder_width), 1e-4)
+    pose_idx = list(topology.groups["pose"].indices)
+    pose = (xyz[pose_idx] - center[None, :]) / scale
+    return pose, valid[pose_idx], scale, mode
+
+
 def draw_hand(cv2, canvas, points: np.ndarray, valid: np.ndarray, rect: tuple[int, int, int, int], title: str) -> None:
     x, y, w, h = rect
     draw_panel_title(cv2, canvas, title, x, y, w, h)
@@ -322,40 +354,44 @@ def compute_debug_stats(raw: dict, norm: dict, topology: KeypointTopology, frame
         "mean_acceleration": float(np.linalg.norm(acceleration, axis=-1).mean()),
         "torso_center_x": float(torso_center[0, 0]),
         "torso_center_y": float(torso_center[0, 1]),
+        "face_joints": float(len(topology.groups["face"].indices)),
     }
     return stats
 
 
 def make_debug_canvas(cv2, raw: dict, norm: dict, topology: KeypointTopology, stats: dict[str, float], fps: float) -> np.ndarray:
-    canvas = np.zeros((760, 1180, 3), dtype=np.uint8)
+    canvas = np.zeros((820, 1400, 3), dtype=np.uint8)
     canvas[:] = (18, 18, 18)
     raw_valid = raw["valid_mask"][0]
     norm_frame = norm["keypoints"][-1]
-    body = norm_frame[:, 3:6]
     face_rel = norm_frame[:, 6:9]
     hand_rel = norm_frame[:, 9:12]
 
-    draw_panel_title(cv2, canvas, "Body-relative skeleton (torso centered / body_scale)", 20, 20, 520, 350)
-    draw_points(cv2, canvas, body, raw_valid, (35, 55, 490, 295), (80, 190, 255), topology.edges, scale=155.0)
+    pose, pose_valid, pose_scale, pose_mode = seated_friendly_pose(raw, topology)
+    draw_panel_title(cv2, canvas, f"Pose only normalized ({pose_mode}, scale=shoulders)", 20, 20, 500, 360)
+    draw_points(cv2, canvas, pose, pose_valid, (35, 58, 470, 300), (80, 190, 255), pose_edges_for_group(topology), scale=135.0)
 
-    draw_panel_title(cv2, canvas, "Face-relative points (nose centered / body_scale)", 560, 20, 280, 350)
+    draw_panel_title(cv2, canvas, f"Face normalized zoom ({int(stats['face_joints'])} pts, nose/body scale)", 540, 20, 360, 360)
     face_idx = list(topology.groups["face"].indices)
-    draw_points(cv2, canvas, face_rel[face_idx], raw_valid[face_idx], (575, 55, 250, 295), (230, 180, 80), (), scale=260.0)
+    draw_points(cv2, canvas, face_rel[face_idx], raw_valid[face_idx], (555, 58, 330, 300), (230, 180, 80), (), scale=520.0)
 
     left_idx = list(topology.groups["left_hand"].indices)
     right_idx = list(topology.groups["right_hand"].indices)
-    draw_hand(cv2, canvas, hand_rel[left_idx], raw_valid[left_idx], (20, 395, 250, 250), "Left hand local (wrist centered)")
-    draw_hand(cv2, canvas, hand_rel[right_idx], raw_valid[right_idx], (290, 395, 250, 250), "Right hand local (wrist centered)")
+    draw_hand(cv2, canvas, hand_rel[left_idx], raw_valid[left_idx], (20, 410, 420, 360), "Left hand local zoom (wrist centered)")
+    draw_hand(cv2, canvas, hand_rel[right_idx], raw_valid[right_idx], (470, 410, 420, 360), "Right hand local zoom (wrist centered)")
 
-    draw_panel_title(cv2, canvas, "JEPA feature/debug info", 860, 20, 300, 625)
+    draw_panel_title(cv2, canvas, "JEPA feature/debug info", 930, 20, 440, 750)
     lines = [
         f"FPS: {fps:5.1f}",
         f"JEPA input now: [T={int(stats['jepa_shape_t'])}, J={int(stats['jepa_shape_j'])}, F={int(stats['jepa_shape_f'])}]",
         "F blocks: global/body/face/hand/vel/acc",
+        "Debug view separates pose, face and hands.",
+        f"pose debug scale: {pose_scale:.4f}",
         f"buffer frames: {int(stats['buffer_frames'])}",
         f"valid ratio: {stats['valid_ratio']:.2f}",
         f"pose presence: {stats['pose_presence']:.2f}",
         f"face presence: {stats['face_presence']:.2f}",
+        f"face joints: {int(stats['face_joints'])}",
         f"left hand presence: {stats['left_hand_presence']:.2f}",
         f"right hand presence: {stats['right_hand_presence']:.2f}",
         f"body scale: {stats['body_scale']:.4f}",
@@ -372,7 +408,7 @@ def make_debug_canvas(cv2, raw: dict, norm: dict, topology: KeypointTopology, st
     ]
     y = 62
     for line in lines:
-        draw_text(cv2, canvas, line, 875, y, scale=0.45)
+        draw_text(cv2, canvas, line, 948, y, scale=0.45)
         y += 26
     return canvas
 
