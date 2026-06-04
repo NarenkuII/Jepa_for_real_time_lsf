@@ -2,6 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+SIGN_RELEVANT_FACE_LANDMARKS = tuple(
+    sorted(
+        set(
+            # Mouth/lips.
+            (61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 185, 40, 39, 37, 0, 267, 269, 270, 409, 78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 191, 80, 81, 82, 13, 312, 311, 310, 415)
+            # Eyes.
+            + (33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246)
+            + (263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466)
+            # Eyebrows.
+            + (46, 53, 52, 65, 55, 70, 63, 105, 66, 107)
+            + (276, 283, 282, 295, 285, 300, 293, 334, 296, 336)
+            # Nose bridge/tip.
+            + (1, 2, 4, 5, 6, 197, 195, 98, 327)
+        )
+    )
+)
+
 
 @dataclass(frozen=True)
 class JointGroup:
@@ -20,7 +37,8 @@ class KeypointTopology:
 
 def mediapipe_holistic_topology(face_subset: str = "sign_relevant") -> KeypointTopology:
     pose = tuple(range(0, 33))
-    face = tuple(range(33, 33 + (40 if face_subset == "sign_relevant" else 468)))
+    face_count = len(SIGN_RELEVANT_FACE_LANDMARKS) if face_subset == "sign_relevant" else 468
+    face = tuple(range(33, 33 + face_count))
     left_hand = tuple(range(33 + len(face), 33 + len(face) + 21))
     right_hand = tuple(range(33 + len(face) + 21, 33 + len(face) + 42))
     groups = {
@@ -51,4 +69,3 @@ def mediapipe_holistic_topology(face_subset: str = "sign_relevant") -> KeypointT
 
 def synthetic_topology() -> KeypointTopology:
     return mediapipe_holistic_topology("sign_relevant")
-

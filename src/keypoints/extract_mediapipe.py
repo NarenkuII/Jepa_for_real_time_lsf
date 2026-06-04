@@ -4,48 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-FACE_SIGN_RELEVANT = (
-    1,
-    4,
-    6,
-    10,
-    13,
-    14,
-    17,
-    33,
-    37,
-    39,
-    40,
-    46,
-    52,
-    55,
-    61,
-    70,
-    80,
-    81,
-    82,
-    87,
-    88,
-    91,
-    95,
-    105,
-    107,
-    133,
-    145,
-    159,
-    161,
-    263,
-    269,
-    270,
-    276,
-    291,
-    308,
-    311,
-    312,
-    317,
-    318,
-    324,
-)
+from src.keypoints.topology import SIGN_RELEVANT_FACE_LANDMARKS
 
 
 def _landmarks_to_array(landmarks, count: int, indices: tuple[int, ...] | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -85,7 +44,7 @@ def extract_video_keypoints(video: str, start: float | None = None, end: float |
     cap.set(cv2.CAP_PROP_POS_FRAMES, first_frame)
 
     face_subset = (config or {}).get("keypoints", {}).get("face_subset", "sign_relevant")
-    face_indices = FACE_SIGN_RELEVANT if face_subset == "sign_relevant" else tuple(range(468))
+    face_indices = SIGN_RELEVANT_FACE_LANDMARKS if face_subset == "sign_relevant" else tuple(range(468))
     use_pose = (config or {}).get("keypoints", {}).get("use_pose", True)
     use_face = (config or {}).get("keypoints", {}).get("use_face", True)
     use_hands = (config or {}).get("keypoints", {}).get("use_hands", True)

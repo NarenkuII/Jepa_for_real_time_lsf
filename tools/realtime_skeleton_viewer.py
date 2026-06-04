@@ -12,53 +12,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.keypoints.topology import KeypointTopology, mediapipe_holistic_topology
+from src.keypoints.topology import KeypointTopology, SIGN_RELEVANT_FACE_LANDMARKS, mediapipe_holistic_topology
 from src.preprocessing.normalization import compute_body_frame, normalize_keypoints
 from src.utils.config import load_config
 
-
-FACE_SIGN_RELEVANT = (
-    1,
-    4,
-    6,
-    10,
-    13,
-    14,
-    17,
-    33,
-    37,
-    39,
-    40,
-    46,
-    52,
-    55,
-    61,
-    70,
-    80,
-    81,
-    82,
-    87,
-    88,
-    91,
-    95,
-    105,
-    107,
-    133,
-    145,
-    159,
-    161,
-    263,
-    269,
-    270,
-    276,
-    291,
-    308,
-    311,
-    312,
-    317,
-    318,
-    324,
-)
 
 POSE_HAND_DUPLICATES = {17, 18, 19, 20, 21, 22}
 POSE_FACE_DUPLICATES = set(range(0, 11))
@@ -182,7 +139,7 @@ class TasksHolistic:
 
 
 def holistic_to_internal(result, full_face: bool) -> tuple[dict, KeypointTopology]:
-    face_indices = tuple(range(468)) if full_face else FACE_SIGN_RELEVANT
+    face_indices = tuple(range(468)) if full_face else SIGN_RELEVANT_FACE_LANDMARKS
     topology = mediapipe_holistic_topology("full" if full_face else "sign_relevant")
     parts = []
     confidences = []
@@ -431,8 +388,7 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--model_complexity", type=int, default=1)
-    parser.add_argument("--full_face", action="store_true", default=True, help="Use all 468 face landmarks. This is the default.")
-    parser.add_argument("--face_subset", action="store_true", help="Use only the small sign-relevant face subset instead of all 468 face points.")
+    parser.add_argument("--full_face", action="store_true", help="Use all 468 face landmarks for visual debugging. Default is the JEPA subset.")
     parser.add_argument("--draw_face_mesh", action="store_true", help="Draw dense face mesh on raw webcam overlay. Default draws contours only.")
     parser.add_argument("--buffer_size", type=int, default=128)
     parser.add_argument("--save_dir", default="reports/webcam_debug")
@@ -440,7 +396,7 @@ def main() -> None:
     parser.add_argument("--model_dir", default="checkpoints/mediapipe")
     parser.add_argument("--delegate", choices=["cpu", "gpu"], default="gpu", help="MediaPipe Tasks delegate. GPU is attempted by default in tasks backend.")
     args = parser.parse_args()
-    full_face = args.full_face and not args.face_subset
+    full_face = args.full_face
 
     cv2, mp = require_cv_mediapipe()
     cfg = load_config(args.config)
