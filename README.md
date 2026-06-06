@@ -62,6 +62,33 @@ python tools/generate_synthetic_dataset.py --output_dir data/synthetic
 pytest tests/
 ```
 
+## Dataset alphabet Type B
+
+Le builder alphabet reconstruit les keypoints uniquement depuis les vidéos des dossiers `clips`. Il n'utilise jamais les anciens dossiers `keypoints` ou `preview`.
+
+```bash
+python tools/build_alphabet_dataset.py \
+  --source_root "C:\Users\Narenku\Documents\000000000000000_test_projet_2a\segemntation-last-04-05-26\workspace\datasets" \
+  --output_dir data/alphabet_type_b \
+  --delegate gpu
+```
+
+Le traitement est reprenable : les fichiers `.npz` existants sont conservés. Les sorties principales sont :
+
+```text
+data/alphabet_type_b/keypoints/{train,val,test}/
+data/alphabet_type_b/manifests/alphabet_all.jsonl
+data/alphabet_type_b/manifests/alphabet_clean.jsonl
+data/alphabet_type_b/manifests/alphabet_review.jsonl
+data/alphabet_type_b/manifests/alphabet_train.jsonl
+data/alphabet_type_b/manifests/alphabet_val.jsonl
+data/alphabet_type_b/manifests/alphabet_test.jsonl
+data/alphabet_type_b/reports/dataset_report.json
+data/alphabet_type_b/reports/dataset_report.html
+```
+
+Chaque NPZ contient les keypoints bruts, les 18 features normalisées, la confiance, le masque de validité et les métadonnées du clip. Les splits sont séparés par signeur.
+
 ## Vérifier le dataset
 
 ```bash
