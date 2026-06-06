@@ -200,6 +200,17 @@ environ deux secondes, utiliser `Espace` pour vider le buffer entre deux essais,
 et `Q` ou `Échap` pour quitter. MediaPipe peut fonctionner sur CPU sous Windows
 tandis que le classifieur PyTorch utilise CUDA.
 
+`LIVE` utilise seulement les 24 frames les plus récentes et suit rapidement les
+transitions. `STABLE` attend deux confirmations afin de réduire le clignotement.
+
+Matrice de confusion du jeu test :
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\evaluate_alphabet.py \
+  --checkpoint runs\alphabet_graph_jepa_context_fix\best.pt \
+  --output-dir reports\alphabet_graph_jepa
+```
+
 ```bash
 python tools/predict_segment.py \
   --video data/raw/test/video_001.mp4 \

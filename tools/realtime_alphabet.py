@@ -49,10 +49,11 @@ def draw_raw_overlay(cv2, frame: np.ndarray, raw: dict, extractor: MediaPipeTask
                 cv2.circle(frame, tuple(pixels[index]), radius, color, -1, cv2.LINE_AA)
 
 
-def prepare_window(raw_frames: deque[dict], window_size: int) -> tuple[np.ndarray, np.ndarray]:
-    raw_keypoints = np.stack([frame["keypoints"] for frame in raw_frames])
-    confidence = np.stack([frame["confidence"] for frame in raw_frames])
-    valid = np.stack([frame["valid_mask"] for frame in raw_frames])
+def prepare_window(raw_frames: deque[dict], window_size: int, inference_frames: int) -> tuple[np.ndarray, np.ndarray]:
+    recent_frames = list(raw_frames)[-inference_frames:]
+    raw_keypoints = np.stack([frame["keypoints"] for frame in recent_frames])
+    confidence = np.stack([frame["confidence"] for frame in recent_frames])
+    valid = np.stack([frame["valid_mask"] for frame in recent_frames])
     canonical = mediapipe_to_canonical(raw_keypoints, confidence, valid)
     frames = canonical.shape[0]
     window = np.zeros((window_size, NUM_JOINTS, NUM_FEATURES), dtype=np.float32)
@@ -80,8 +81,12 @@ def main() -> None:
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--backend", choices=("dshow", "msmf", "auto"), default="auto")
     parser.add_argument("--delegate", choices=("gpu", "cpu"), default="gpu")
-    parser.add_argument("--min-frames", type=int, default=24)
-    parser.add_argument("--predict-every", type=int, default=3)
+    parser.add_argument("--min-frames", type=int, default=12)
+    parser.add_argument("--inference-frames", type=int, default=24)
+    parser.add_argument("--predict-every", type=int, default=2)
+    parser.add_argument("--ema", type=float, default=0.65, help="Weight of the newest prediction.")
+    parser.add_argument("--stable-confirmations", type=int, default=2)
+    parser.add_argument("--stable-threshold", type=float, default=0.35)
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     args = parser.parse_args()
@@ -106,9 +111,11 @@ def main() -> None:
         extractor.close()
         raise RuntimeError(f"Cannot open camera {args.camera}")
 
-    frames: deque[dict] = deque(maxlen=window_size)
-    probability_history: deque[np.ndarray] = deque(maxlen=7)
+    frames: deque[dict] = deque(maxlen=max(window_size, args.inference_frames))
     prediction = np.full(len(LABELS), 1.0 / len(LABELS), dtype=np.float32)
+    stable_label = "..."
+    candidate_label = None
+    candidate_count = 0
     last_time = time.perf_counter()
     fps = 0.0
     frame_index = 0
@@ -132,12 +139,24 @@ def main() -> None:
             no_hand_frames = 0 if hands_visible else no_hand_frames + 1
             if no_hand_frames > 15:
                 frames.clear()
-                probability_history.clear()
+                stable_label = "..."
+                candidate_label = None
+                candidate_count = 0
 
             if len(frames) >= args.min_frames and frame_index % args.predict_every == 0:
-                window, padding = prepare_window(frames, window_size)
-                probability_history.append(predict(model, window, padding, device))
-                prediction = np.mean(probability_history, axis=0)
+                window, padding = prepare_window(frames, window_size, args.inference_frames)
+                current = predict(model, window, padding, device)
+                prediction = args.ema * current + (1.0 - args.ema) * prediction
+                live_index = int(prediction.argmax())
+                live_label = LABELS[live_index]
+                if prediction[live_index] >= args.stable_threshold:
+                    if live_label == candidate_label:
+                        candidate_count += 1
+                    else:
+                        candidate_label = live_label
+                        candidate_count = 1
+                    if candidate_count >= args.stable_confirmations:
+                        stable_label = live_label
 
             draw_raw_overlay(cv2, frame, raw, extractor)
             now = time.perf_counter()
@@ -147,20 +166,21 @@ def main() -> None:
 
             top = np.argsort(prediction)[::-1][:3]
             ready = len(frames) >= args.min_frames and hands_visible
-            label = LABELS[top[0]] if ready else "..."
+            live_label = LABELS[top[0]] if ready else "..."
             confidence = float(prediction[top[0]]) if ready else 0.0
             color = (70, 240, 90) if confidence >= 0.55 else (40, 210, 255)
             # Mirror only the camera pixels and skeleton. Inference keeps
             # anatomical left/right labels, and text remains readable.
             display = cv2.flip(frame, 1)
-            cv2.rectangle(display, (14, 14), (430, 170), (18, 18, 18), -1)
-            put_text(cv2, display, f"LETTER: {label}", (28, 68), 1.45, color, 3)
-            put_text(cv2, display, f"confidence {confidence:.0%} | buffer {len(frames)}/{window_size}", (28, 104), 0.62)
+            cv2.rectangle(display, (14, 14), (500, 200), (18, 18, 18), -1)
+            put_text(cv2, display, f"LIVE: {live_label}", (28, 62), 1.25, color, 3)
+            put_text(cv2, display, f"STABLE: {stable_label}", (28, 105), 1.05, (80, 220, 255), 2)
+            put_text(cv2, display, f"confidence {confidence:.0%} | recent {min(len(frames), args.inference_frames)} frames", (28, 140), 0.62)
             if ready:
                 ranking = "  ".join(f"{LABELS[i]} {prediction[i]:.0%}" for i in top)
-                put_text(cv2, display, ranking, (28, 136), 0.62, (210, 210, 210))
+                put_text(cv2, display, ranking, (28, 174), 0.62, (210, 210, 210))
             else:
-                put_text(cv2, display, "Show one letter for about 2 seconds", (28, 136), 0.58, (210, 210, 210))
+                put_text(cv2, display, "Show a letter", (28, 174), 0.58, (210, 210, 210))
             put_text(cv2, display, f"{fps:.1f} FPS | {device} | SPACE reset | Q quit", (18, display.shape[0] - 18), 0.55, (80, 255, 80))
             cv2.imshow("Realtime alphabet recognition", display)
             key = cv2.waitKey(1) & 0xFF
@@ -168,8 +188,10 @@ def main() -> None:
                 break
             if key == ord(" "):
                 frames.clear()
-                probability_history.clear()
                 prediction.fill(1.0 / len(LABELS))
+                stable_label = "..."
+                candidate_label = None
+                candidate_count = 0
     finally:
         capture.release()
         extractor.close()
