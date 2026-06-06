@@ -165,9 +165,9 @@ python tools/train_alphabet_classifier.py \
 ```
 
 Toujours comparer ce résultat à `--scratch`. Le pilote du 6 juin 2026 montre que
-le classifieur scratch généralise mieux que les checkpoints JEPA Type A actuels;
-voir `docs/pilot_results.md`. Le checkpoint JEPA ne doit donc pas encore devenir
-le défaut du pipeline alphabet.
+le graph transformer pré-entraîné par JEPA atteint 61,5% top-1 sur les signeurs
+test, contre 57,7% pour le même encodeur entraîné depuis zéro. L’ancienne
+baseline aplatie reste légèrement devant à 62,8%; voir `docs/pilot_results.md`.
 
 ## Alignement skeleton-text optionnel
 

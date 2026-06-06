@@ -6,6 +6,7 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from src.data.manifest import read_jsonl
+from src.keypoints.canonical import mirror_canonical_features
 
 
 class SkeletonWindowDataset(Dataset):
@@ -16,12 +17,14 @@ class SkeletonWindowDataset(Dataset):
         training: bool = True,
         seed: int = 42,
         joint_dropout: tuple[float, float] = (0.0, 0.0),
+        mirror_probability: float = 0.0,
     ):
         self.rows = read_jsonl(manifest)
         self.window_size = window_size
         self.training = training
         self.seed = seed
         self.joint_dropout = joint_dropout
+        self.mirror_probability = mirror_probability
         if not self.rows:
             raise ValueError(f"Empty manifest: {manifest}")
 
@@ -57,4 +60,6 @@ class SkeletonWindowDataset(Dataset):
             ratio = np.random.uniform(*self.joint_dropout)
             dropped = np.random.random(window.shape[:2]) < ratio
             window[dropped] = 0.0
+        if self.training and np.random.random() < self.mirror_probability:
+            window = mirror_canonical_features(window)
         return {"id": row["id"], "keypoints": window, "padding_mask": mask}

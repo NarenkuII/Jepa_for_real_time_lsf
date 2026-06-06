@@ -84,7 +84,7 @@ class SkeletonJEPA(nn.Module):
             target = self.target_encoder(x, padding_mask)
         cosine_loss = cosine_latent_loss(pred, target, mask.target_mask)
         pred_var_loss = variance_loss(pred, mask.target_mask)
-        context_var_loss = variance_loss(context_latent, mask.target_mask)
+        context_var_loss = variance_loss(context_latent, mask.context_mask)
         var_loss = 0.5 * (pred_var_loss + context_var_loss)
         selected_context = context_latent[mask.target_mask]
         expected_norm = context_latent.shape[-1] ** 0.5

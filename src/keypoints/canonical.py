@@ -45,6 +45,14 @@ FEATURE_NAMES = (
     "confidence",
     "valid",
 )
+HORIZONTAL_FEATURES = (0, 2, 4, 6)
+HAND_EDGES = (
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    (0, 9), (9, 10), (10, 11), (11, 12),
+    (0, 13), (13, 14), (14, 15), (15, 16),
+    (0, 17), (17, 18), (18, 19), (19, 20),
+)
 
 
 class CanonicalGroups:
@@ -55,6 +63,65 @@ class CanonicalGroups:
 
 
 GROUPS = CanonicalGroups()
+
+
+def canonical_edges() -> tuple[tuple[int, int], ...]:
+    edges = [
+        (0, 1), (0, 2), (2, 4), (1, 3), (3, 5),
+        (0, 6), (1, 7), (6, 7),
+        (4, GROUPS.left_hand.start), (5, GROUPS.right_hand.start),
+    ]
+    for start in (GROUPS.left_hand.start, GROUPS.right_hand.start):
+        edges.extend((start + a, start + b) for a, b in HAND_EDGES)
+
+    face = GROUPS.face.start
+    # Eyebrows, eyes, nose, and mouth contours.
+    contours = (
+        tuple(range(0, 5)),
+        tuple(range(5, 10)),
+        (10, 11, 12, 13, 14, 15, 10),
+        (16, 17, 18, 19, 20, 21, 16),
+        (22, 23, 25),
+        (24, 23, 26),
+        (27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 27),
+    )
+    for contour in contours:
+        edges.extend((face + a, face + b) for a, b in zip(contour, contour[1:]))
+    # Anchor the face graph to the shoulder line.
+    edges.extend(((0, face + 24), (1, face + 26)))
+    return tuple(edges)
+
+
+def mirror_permutation() -> np.ndarray:
+    permutation = np.arange(NUM_JOINTS)
+    for left, right in ((0, 1), (2, 3), (4, 5), (6, 7)):
+        permutation[left], permutation[right] = right, left
+    left = np.arange(GROUPS.left_hand.start, GROUPS.left_hand.stop)
+    right = np.arange(GROUPS.right_hand.start, GROUPS.right_hand.stop)
+    permutation[left], permutation[right] = right, left
+
+    face = GROUPS.face.start
+    face_pairs = (
+        (0, 9), (1, 8), (2, 7), (3, 6), (4, 5),
+        (10, 19), (11, 18), (12, 17), (13, 16), (14, 21), (15, 20),
+        (24, 26),
+        (27, 33), (28, 32), (29, 31), (34, 38), (35, 37),
+    )
+    for left_index, right_index in face_pairs:
+        permutation[face + left_index], permutation[face + right_index] = (
+            face + right_index,
+            face + left_index,
+        )
+    return permutation
+
+
+MIRROR_PERMUTATION = mirror_permutation()
+
+
+def mirror_canonical_features(features: np.ndarray) -> np.ndarray:
+    mirrored = np.asarray(features, dtype=np.float32)[..., MIRROR_PERMUTATION, :].copy()
+    mirrored[..., list(HORIZONTAL_FEATURES)] *= -1.0
+    return mirrored
 
 
 def _canonical_features(xy: np.ndarray, confidence: np.ndarray, valid: np.ndarray) -> np.ndarray:

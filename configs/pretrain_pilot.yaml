@@ -5,8 +5,9 @@ data:
   topology: canonical_sign89
   window_size: 96
   joint_dropout: [0.20, 0.55]
+  mirror_probability: 0.5
 jepa:
-  encoder_type: temporal_transformer
+  encoder_type: graph_transformer
   d_model: 128
   num_layers: 4
   num_heads: 8

@@ -33,6 +33,7 @@ def evaluate(model, loader, device, max_batches: int = 20) -> dict[str, float]:
         padding = batch["padding_mask"].to(device, non_blocking=True)
         mask = temporal_block_mask(x.shape[0], x.shape[1], ratio=0.4, device=device)
         mask.target_mask &= padding
+        mask.context_mask &= padding
         out = model(x, mask=mask, padding_mask=padding)
         stats = model.collapse_stats(out["target_latent"])
         for key in ("loss", "cosine_loss", "variance_loss"):
@@ -90,6 +91,7 @@ def main() -> None:
         window_size=window_size,
         training=True,
         joint_dropout=(float(dropout_cfg[0]), float(dropout_cfg[1])),
+        mirror_probability=float(config["data"].get("mirror_probability", 0.5)),
     )
     val_data = SkeletonWindowDataset(args.val_manifest, window_size=window_size, training=False)
     loader_args = {
@@ -146,6 +148,7 @@ def main() -> None:
                     else temporal_block_mask(x.shape[0], x.shape[1], ratio=0.4, device=device)
                 )
                 mask.target_mask &= padding
+                mask.context_mask &= padding
                 optimizer.zero_grad(set_to_none=True)
                 with torch.amp.autocast("cuda", dtype=torch.float16):
                     out = model(x, mask=mask, padding_mask=padding)

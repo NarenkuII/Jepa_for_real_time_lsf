@@ -99,7 +99,12 @@ def main() -> None:
 
     window_size = int(config["data"]["window_size"])
     datasets = {
-        split: AlphabetDataset(args.data_root / "manifests" / f"alphabet_{split}.jsonl", window_size, split == "train")
+        split: AlphabetDataset(
+            args.data_root / "manifests" / f"alphabet_{split}.jsonl",
+            window_size,
+            split == "train",
+            mirror_probability=0.5 if split == "train" else 0.0,
+        )
         for split in ("train", "val", "test")
     }
     loaders = {
