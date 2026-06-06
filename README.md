@@ -189,6 +189,12 @@ python -m src.training.finetune_skeleton_to_text --config configs/finetune_skele
 .\.venv-jepa\Scripts\python.exe tools\realtime_alphabet.py
 ```
 
+Pour DroidCam sous Windows :
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\realtime_alphabet.py --camera 1 --backend msmf
+```
+
 Le modèle affiche la lettre et le top-3 sur la webcam. Montrer une lettre pendant
 environ deux secondes, utiliser `Espace` pour vider le buffer entre deux essais,
 et `Q` ou `Échap` pour quitter. MediaPipe peut fonctionner sur CPU sous Windows

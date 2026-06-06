@@ -78,6 +78,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Realtime A-Z recognition from a webcam.")
     parser.add_argument("--checkpoint", type=Path, default=Path("runs/alphabet_graph_jepa_context_fix/best.pt"))
     parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--backend", choices=("dshow", "msmf", "auto"), default="auto")
     parser.add_argument("--delegate", choices=("gpu", "cpu"), default="gpu")
     parser.add_argument("--min-frames", type=int, default=24)
     parser.add_argument("--predict-every", type=int, default=3)
@@ -93,7 +94,12 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, window_size = load_model(args.checkpoint, device)
     extractor = MediaPipeTasksExtractor.create_with_fallback("checkpoints/mediapipe", args.delegate)
-    capture = cv2.VideoCapture(args.camera, cv2.CAP_DSHOW)
+    backends = {
+        "dshow": cv2.CAP_DSHOW,
+        "msmf": cv2.CAP_MSMF,
+        "auto": cv2.CAP_ANY,
+    }
+    capture = cv2.VideoCapture(args.camera, backends[args.backend])
     capture.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
     capture.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
     if not capture.isOpened():
