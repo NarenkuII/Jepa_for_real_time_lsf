@@ -5,11 +5,14 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.venv-jepa/
 venv/
 env/
 data/raw/
 data/keypoints/
 data/alphabet_type_b*/
+data/alphabet_canonical*/
+data/type_a_canonical*/
 checkpoints/*.ckpt
 checkpoints/*.pt
 checkpoints/mediapipe/

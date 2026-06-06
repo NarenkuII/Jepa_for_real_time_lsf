@@ -41,13 +41,23 @@ def cosine_latent_loss(pred: torch.Tensor, target: torch.Tensor, target_mask: to
     return (loss * target_mask.float()).sum() / denom
 
 
+def variance_loss(latent: torch.Tensor, target_mask: torch.Tensor, target_std: float = 0.8) -> torch.Tensor:
+    selected = latent[target_mask]
+    if selected.shape[0] < 2:
+        return latent.new_zeros(())
+    std = torch.sqrt(selected.float().var(dim=0, unbiased=False) + 1e-4)
+    return torch.relu(target_std - std).mean()
+
+
 class SkeletonJEPA(nn.Module):
-    def __init__(self, num_joints: int, in_features: int, d_model: int = 256, num_layers: int = 2, num_heads: int = 4, dropout: float = 0.1, predictor_hidden_dim: int = 512, encoder_type: str = "temporal_transformer", ema_tau: float = 0.996):
+    def __init__(self, num_joints: int, in_features: int, d_model: int = 256, num_layers: int = 2, num_heads: int = 4, dropout: float = 0.1, predictor_hidden_dim: int = 512, encoder_type: str = "temporal_transformer", ema_tau: float = 0.996, variance_weight: float = 0.05, norm_weight: float = 0.05):
         super().__init__()
         self.context_encoder = build_skeleton_encoder(encoder_type, num_joints, in_features, d_model, num_layers, num_heads, dropout)
         self.target_encoder = build_skeleton_encoder(encoder_type, num_joints, in_features, d_model, num_layers, num_heads, dropout)
         self.predictor = LatentPredictor(d_model, predictor_hidden_dim)
         self.ema_tau = ema_tau
+        self.variance_weight = variance_weight
+        self.norm_weight = norm_weight
         self._init_target()
 
     @torch.no_grad()
@@ -72,12 +82,30 @@ class SkeletonJEPA(nn.Module):
         pred = self.predictor(context_latent)
         with torch.no_grad():
             target = self.target_encoder(x, padding_mask)
-        loss = cosine_latent_loss(pred, target, mask.target_mask)
-        return {"loss": loss, "predicted_latent": pred, "target_latent": target, "mask": mask}
+        cosine_loss = cosine_latent_loss(pred, target, mask.target_mask)
+        pred_var_loss = variance_loss(pred, mask.target_mask)
+        context_var_loss = variance_loss(context_latent, mask.target_mask)
+        var_loss = 0.5 * (pred_var_loss + context_var_loss)
+        selected_context = context_latent[mask.target_mask]
+        expected_norm = context_latent.shape[-1] ** 0.5
+        norm_loss = (
+            (selected_context.float().norm(dim=-1).mean() / expected_norm - 1.0).abs()
+            if selected_context.numel()
+            else context_latent.new_zeros(())
+        )
+        loss = cosine_loss + self.variance_weight * var_loss + self.norm_weight * norm_loss
+        return {
+            "loss": loss,
+            "cosine_loss": cosine_loss,
+            "variance_loss": var_loss,
+            "norm_loss": norm_loss,
+            "predicted_latent": pred,
+            "target_latent": target,
+            "mask": mask,
+        }
 
     @staticmethod
     def collapse_stats(latent: torch.Tensor) -> dict[str, float]:
         std = latent.detach().std(dim=(0, 1)).mean()
         norm = latent.detach().norm(dim=-1).mean()
         return {"embedding_std": float(std.cpu()), "embedding_norm": float(norm.cpu()), "collapse_score": float((1.0 / std.clamp_min(1e-6)).cpu())}
-

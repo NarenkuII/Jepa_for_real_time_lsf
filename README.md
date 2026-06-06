@@ -127,6 +127,48 @@ python tools/extract_keypoints.py \
 python -m src.training.pretrain_jepa --config configs/pretrain_jepa.yaml
 ```
 
+### Pilote OpenPose Type A -> alphabet Type B
+
+Les deux sources sont adaptées vers une topologie commune de 89 points : 8 points du
+haut du corps, 21 points par main et 39 points visage (sourcils, yeux, nez, bouche).
+Chaque point porte 10 features de position normalisée, position locale, vitesse,
+accélération, confiance et validité.
+
+```bash
+python tools/convert_type_a_openpose.py \
+  --archive train_2D_keypoints.tar.gz \
+  --split train \
+  --output-dir data/type_a_canonical \
+  --max-sequences 10000
+
+python tools/convert_type_a_openpose.py \
+  --archive val_2D_keypoints.tar.gz \
+  --split val \
+  --output-dir data/type_a_canonical
+
+python tools/train_jepa.py \
+  --train-manifest data/type_a_canonical/manifests/type_a_train.jsonl \
+  --val-manifest data/type_a_canonical/manifests/type_a_val.jsonl \
+  --output-dir runs/jepa_pilot \
+  --max-minutes 10
+```
+
+Conversion et fine-tuning alphabet avec splits séparés par signeur :
+
+```bash
+python tools/convert_type_b_canonical.py
+
+python tools/train_alphabet_classifier.py \
+  --checkpoint runs/jepa_pilot/final.pt \
+  --output-dir runs/alphabet_jepa \
+  --max-minutes 15
+```
+
+Toujours comparer ce résultat à `--scratch`. Le pilote du 6 juin 2026 montre que
+le classifieur scratch généralise mieux que les checkpoints JEPA Type A actuels;
+voir `docs/pilot_results.md`. Le checkpoint JEPA ne doit donc pas encore devenir
+le défaut du pipeline alphabet.
+
 ## Alignement skeleton-text optionnel
 
 ```bash
