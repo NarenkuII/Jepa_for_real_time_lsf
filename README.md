@@ -183,6 +183,17 @@ python -m src.training.finetune_skeleton_to_text --config configs/finetune_skele
 
 ## Inférence
 
+### Alphabet en temps réel
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\realtime_alphabet.py
+```
+
+Le modèle affiche la lettre et le top-3 sur la webcam. Montrer une lettre pendant
+environ deux secondes, utiliser `Espace` pour vider le buffer entre deux essais,
+et `Q` ou `Échap` pour quitter. MediaPipe peut fonctionner sur CPU sous Windows
+tandis que le classifieur PyTorch utilise CUDA.
+
 ```bash
 python tools/predict_segment.py \
   --video data/raw/test/video_001.mp4 \

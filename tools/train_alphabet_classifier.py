@@ -17,11 +17,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.data.dataset_windows import SkeletonWindowDataset
 from src.data.manifest import read_jsonl
 from src.keypoints.canonical import NUM_FEATURES, NUM_JOINTS
+from src.models.alphabet_classifier import AlphabetClassifier, LABELS
 from src.training.pretrain_jepa import build_model_from_config
 from src.utils.config import load_config
 from src.utils.seed import seed_everything
 
-LABELS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 LABEL_TO_ID = {label: index for index, label in enumerate(LABELS)}
 
 
@@ -35,19 +35,6 @@ class AlphabetDataset(SkeletonWindowDataset):
             points[:, drop] = 0.0
         item["label"] = LABEL_TO_ID[self.rows[index]["label"]]
         return item
-
-
-class AlphabetClassifier(nn.Module):
-    def __init__(self, encoder: nn.Module, d_model: int):
-        super().__init__()
-        self.encoder = encoder
-        self.head = nn.Sequential(nn.LayerNorm(d_model), nn.Dropout(0.2), nn.Linear(d_model, len(LABELS)))
-
-    def forward(self, x: torch.Tensor, padding_mask: torch.Tensor) -> torch.Tensor:
-        latent = self.encoder(x, padding_mask)
-        weights = padding_mask.float().unsqueeze(-1)
-        pooled = (latent * weights).sum(dim=1) / weights.sum(dim=1).clamp_min(1.0)
-        return self.head(pooled)
 
 
 @torch.no_grad()
