@@ -34,6 +34,7 @@ def experiment_metrics(directory: Path) -> dict[str, Any]:
     summary = read_json(directory / "summary.json")
     evaluation = read_json(directory / "evaluation" / "report.json")
     sequence = read_json(directory / "evaluation" / "sequence_report.json")
+    runtime = read_json(directory / "evaluation" / "runtime.json") or evaluation.get("runtime", {})
     metrics = {
         "val_accuracy": summary.get("best_val_accuracy"),
         "test_accuracy": first_value(nested(summary, "test", "accuracy"), evaluation.get("accuracy")),
@@ -50,9 +51,9 @@ def experiment_metrics(directory: Path) -> dict[str, Any]:
             sequence.get("exact_match"),
         ),
         "elapsed_sec": summary.get("elapsed_sec"),
-        "latency_ms_p95": nested(evaluation, "runtime", "latency_ms_p95"),
-        "parameters": nested(evaluation, "runtime", "parameters"),
-        "checkpoint_bytes": nested(evaluation, "runtime", "checkpoint_bytes"),
+        "latency_ms_p95": runtime.get("latency_ms_p95"),
+        "parameters": runtime.get("parameters"),
+        "checkpoint_bytes": runtime.get("checkpoint_bytes"),
     }
     return {key: value for key, value in metrics.items() if value is not None}
 
