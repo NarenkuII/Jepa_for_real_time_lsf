@@ -13,6 +13,9 @@ data/keypoints/
 data/alphabet_type_b*/
 data/alphabet_canonical*/
 data/type_a_canonical*/
+data/alphabet_continuous*/
+data/direct_alphabet*/
+data/matignon*/
 checkpoints/*.ckpt
 checkpoints/*.pt
 checkpoints/mediapipe/

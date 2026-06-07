@@ -1,0 +1,22 @@
+inherits: configs/default.yaml
+experiment:
+  name: mixed_direct_text
+text:
+  tokenizer_type: character
+  max_text_length: 384
+skeleton_to_text:
+  pretrained_jepa_checkpoint: runs/graph_jepa_context_fix/best.pt
+  freeze_encoder_epochs: 2
+  decoder_layers: 4
+  decoder_heads: 8
+finetuning:
+  batch_size: 4
+  epochs: 50
+  learning_rate: 0.0003
+  encoder_learning_rate: 0.00003
+  max_minutes: 60
+  source_weights:
+    alphabet_isolated: 1.0
+    alphabet_synthetic: 1.0
+    alphabet_real: 1.0
+    matignon: 1.0

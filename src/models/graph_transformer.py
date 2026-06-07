@@ -78,13 +78,16 @@ class SpatialTemporalGraphTransformer(nn.Module):
         all_missing = spatial_padding.all(dim=-1)
         spatial_padding[all_missing, 0] = False
 
-        tokens = self.input_proj(x) + self.joint_embedding
+        clean_x = x.masked_fill(~joint_valid.unsqueeze(-1), 0.0)
+        tokens = self.input_proj(clean_x) + self.joint_embedding
         tokens = tokens.reshape(batch * frames, joints, -1)
+        tokens = tokens.masked_fill(spatial_padding.unsqueeze(-1), 0.0)
         for layer in self.spatial_layers:
             tokens = layer(
                 tokens,
                 src_mask=self.spatial_mask,
             )
+            tokens = tokens.masked_fill(spatial_padding.unsqueeze(-1), 0.0)
         tokens = self.spatial_norm(tokens)
 
         scores = self.pool_score(tokens).squeeze(-1).masked_fill(spatial_padding, -1e4)

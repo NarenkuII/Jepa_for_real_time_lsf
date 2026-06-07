@@ -12,21 +12,22 @@ from src.keypoints.canonical import mirror_canonical_features
 class SkeletonWindowDataset(Dataset):
     def __init__(
         self,
-        manifest: str | Path,
+        manifest: str | Path | list[str | Path],
         window_size: int = 96,
         training: bool = True,
         seed: int = 42,
         joint_dropout: tuple[float, float] = (0.0, 0.0),
         mirror_probability: float = 0.0,
     ):
-        self.rows = read_jsonl(manifest)
+        manifests = manifest if isinstance(manifest, list) else [manifest]
+        self.rows = [row for path in manifests for row in read_jsonl(path)]
         self.window_size = window_size
         self.training = training
         self.seed = seed
         self.joint_dropout = joint_dropout
         self.mirror_probability = mirror_probability
         if not self.rows:
-            raise ValueError(f"Empty manifest: {manifest}")
+            raise ValueError(f"Empty manifest(s): {manifests}")
 
     def __len__(self) -> int:
         return len(self.rows)

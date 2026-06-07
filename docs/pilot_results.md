@@ -69,8 +69,12 @@ The most likely remaining causes are:
 
 ## Next training work
 
-1. Run graph JEPA for 30-60 minutes with three seeds.
-2. Remove confidence as a direct input and use validity only for pooling.
-3. Add a same-domain self-supervised control on Type B train clips.
-4. Evaluate frozen linear probes before full fine-tuning.
-5. Keep the scratch 62.8% model as the baseline to beat.
+1. Add Matignon windows to Graph-JEPA together with Type A.
+2. Train the shared direct decoder on isolated, synthetic, real spelling and
+   Matignon phrase segments, without glosses or CTC.
+3. Record real `ABC`, `AABB` and spelled-word clips before interpreting
+   synthetic sequence metrics as generalization.
+4. Run graph JEPA for 30-60 minutes with three seeds.
+5. Remove confidence as a direct input and use validity only for pooling.
+6. Evaluate frozen linear probes before full fine-tuning.
+7. Keep the scratch 62.8% model as the alphabet baseline to beat.

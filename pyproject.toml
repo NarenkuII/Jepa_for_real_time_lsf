@@ -20,6 +20,7 @@ dependencies = [
 dev = ["pytest>=8.0"]
 vision = ["opencv-python>=4.9", "mediapipe>=0.10"]
 text = ["sentencepiece>=0.2"]
+matignon = ["yt-dlp"]
 viz = ["scikit-learn>=1.4"]
 
 [tool.setuptools.packages.find]

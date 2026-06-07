@@ -67,8 +67,8 @@ def save_checkpoint(path: Path, model, optimizer, scaler, step: int, elapsed_sec
 def main() -> None:
     parser = argparse.ArgumentParser(description="Time-bounded Skeleton-JEPA pretraining.")
     parser.add_argument("--config", default="configs/pretrain_pilot.yaml")
-    parser.add_argument("--train-manifest", required=True)
-    parser.add_argument("--val-manifest", required=True)
+    parser.add_argument("--train-manifest", action="append", required=True)
+    parser.add_argument("--val-manifest", action="append", required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/jepa_pilot"))
     parser.add_argument("--max-minutes", type=float, default=60.0)
     parser.add_argument("--max-steps", type=int)
