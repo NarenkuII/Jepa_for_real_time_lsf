@@ -3,6 +3,20 @@ from __future__ import annotations
 import numpy as np
 
 
+def wilson_interval(successes: int, total: int, z: float = 1.959963984540054) -> tuple[float, float]:
+    if total <= 0:
+        return 0.0, 0.0
+    proportion = successes / total
+    denominator = 1.0 + z * z / total
+    center = (proportion + z * z / (2.0 * total)) / denominator
+    margin = (
+        z
+        * np.sqrt(proportion * (1.0 - proportion) / total + z * z / (4.0 * total * total))
+        / denominator
+    )
+    return float(max(0.0, center - margin)), float(min(1.0, center + margin))
+
+
 def classification_metrics(confusion: np.ndarray, labels: tuple[str, ...] | list[str]) -> dict:
     confusion = np.asarray(confusion, dtype=np.int64)
     true_support = confusion.sum(axis=1)
@@ -27,6 +41,7 @@ def classification_metrics(confusion: np.ndarray, labels: tuple[str, ...] | list
         where=(precision + recall) > 0,
     )
     total = int(confusion.sum())
+    correct = int(true_positive.sum())
     weights = true_support / max(total, 1)
     per_class = {
         label: {
@@ -39,6 +54,7 @@ def classification_metrics(confusion: np.ndarray, labels: tuple[str, ...] | list
     }
     return {
         "accuracy": float(true_positive.sum() / max(total, 1)),
+        "accuracy_ci95": wilson_interval(correct, total),
         "macro_precision": float(precision.mean()),
         "macro_recall": float(recall.mean()),
         "macro_f1": float(f1.mean()),

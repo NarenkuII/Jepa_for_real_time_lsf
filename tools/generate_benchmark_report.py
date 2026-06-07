@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import platform
 import subprocess
 from pathlib import Path
@@ -86,6 +87,84 @@ def rank_experiments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(ranked, key=lambda row: row["selection_score"], reverse=True)
 
 
+def task_name(experiment: str) -> str:
+    if experiment.startswith(("direct_transformer", "jepa_llm")):
+        return "phrase_translation"
+    if experiment.startswith("ctc_"):
+        return "continuous_alphabet"
+    if experiment.startswith("alphabet_"):
+        return "isolated_alphabet"
+    return "representation"
+
+
+def ranked_by_task(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rank_experiments(rows):
+        groups.setdefault(task_name(row["experiment"]), []).append(row)
+    return groups
+
+
+def exact_mcnemar_p_value(first_only_correct: int, second_only_correct: int) -> float:
+    disagreements = first_only_correct + second_only_correct
+    if disagreements == 0:
+        return 1.0
+    lower = min(first_only_correct, second_only_correct)
+    probability = sum(math.comb(disagreements, index) for index in range(lower + 1)) / (2**disagreements)
+    return min(1.0, 2.0 * probability)
+
+
+def paired_prediction_comparison(face_path: Path, no_face_path: Path) -> dict[str, Any] | None:
+    if not face_path.exists() or not no_face_path.exists():
+        return None
+    face_rows = {
+        row["id"]: row
+        for row in (
+            json.loads(line)
+            for line in face_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
+    }
+    no_face_rows = {
+        row["id"]: row
+        for row in (
+            json.loads(line)
+            for line in no_face_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
+    }
+    shared = sorted(set(face_rows) & set(no_face_rows))
+    if not shared:
+        return None
+    face_only = 0
+    no_face_only = 0
+    both_correct = 0
+    both_wrong = 0
+    for sample_id in shared:
+        face = face_rows[sample_id]
+        no_face = no_face_rows[sample_id]
+        reference = str(face.get("true", face.get("reference", face.get("target", ""))))
+        face_prediction = str(face.get("predicted", face.get("prediction", "")))
+        no_face_prediction = str(no_face.get("predicted", no_face.get("prediction", "")))
+        face_correct = face_prediction == reference
+        no_face_correct = no_face_prediction == reference
+        if face_correct and no_face_correct:
+            both_correct += 1
+        elif face_correct:
+            face_only += 1
+        elif no_face_correct:
+            no_face_only += 1
+        else:
+            both_wrong += 1
+    return {
+        "paired_samples": len(shared),
+        "both_correct": both_correct,
+        "face_only_correct": face_only,
+        "no_face_only_correct": no_face_only,
+        "both_wrong": both_wrong,
+        "mcnemar_exact_p_value": exact_mcnemar_p_value(face_only, no_face_only),
+    }
+
+
 def face_decisions(comparisons: list[dict[str, Any]]) -> list[dict[str, Any]]:
     decisions = []
     for comparison in comparisons:
@@ -143,6 +222,18 @@ def main() -> None:
         gpu = "unavailable"
     comparisons = face_decisions(comparisons)
     ranking = rank_experiments(rows)
+    task_rankings = ranked_by_task(rows)
+    for comparison in comparisons:
+        paired = paired_prediction_comparison(
+            args.campaign_dir / comparison["with_face"] / "evaluation" / "predictions.jsonl",
+            args.campaign_dir / comparison["without_face"] / "evaluation" / "predictions.jsonl",
+        )
+        comparison["paired_test"] = paired
+    priority_order = ("phrase_translation", "continuous_alphabet", "isolated_alphabet")
+    recommended = next(
+        (task_rankings[task][0] for task in priority_order if task_rankings.get(task)),
+        ranking[0] if ranking else None,
+    )
     report = {
         "campaign": state,
         "system": {"platform": platform.platform(), "python": platform.python_version(), "gpu": gpu},
@@ -150,7 +241,8 @@ def main() -> None:
         "experiments": rows,
         "face_ablation": comparisons,
         "ranking": ranking,
-        "recommended_solution": ranking[0] if ranking else None,
+        "ranking_by_task": task_rankings,
+        "recommended_solution": recommended,
     }
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -187,14 +279,17 @@ def main() -> None:
         lines.append(
             f"### {comparison['with_face']} vs {comparison['without_face']}\n\n"
             f"Décision : **{comparison['decision']}** selon `{comparison['decision_metric']}`. "
-            f"Différences `avec - sans` : `{json.dumps(comparison['delta_face_minus_no_face'], ensure_ascii=False)}`"
+            f"Différences `avec - sans` : `{json.dumps(comparison['delta_face_minus_no_face'], ensure_ascii=False)}`. "
+            f"Test apparié : `{json.dumps(comparison.get('paired_test'), ensure_ascii=False)}`."
         )
-    lines.extend(["", "## Classement global", ""])
-    if ranking:
-        lines.extend(
-            f"{index}. **{row['experiment']}** : `{row['selection_score']:.4f}` selon `{row['selection_basis']}`."
-            for index, row in enumerate(ranking, start=1)
-        )
+    lines.extend(["", "## Classements par tâche", ""])
+    if task_rankings:
+        for task, task_rows in task_rankings.items():
+            lines.append(f"### {task}")
+            lines.extend(
+                f"{index}. **{row['experiment']}** : `{row['selection_score']:.4f}` selon `{row['selection_basis']}`."
+                for index, row in enumerate(task_rows, start=1)
+            )
     else:
         lines.append("Aucune expérience terminée ne possède encore une métrique test comparable.")
     lines.extend(
@@ -210,11 +305,12 @@ def main() -> None:
             "## Conclusion",
             "",
             (
-                f"La meilleure solution mesurée est **{ranking[0]['experiment']}**, avec un score de sélection "
-                f"`{ranking[0]['selection_score']:.4f}` fondé sur `{ranking[0]['selection_basis']}`. "
+                f"La meilleure solution pour la tâche la plus complète mesurée est **{recommended['experiment']}**, "
+                f"avec un score de sélection `{recommended['selection_score']:.4f}` fondé sur "
+                f"`{recommended['selection_basis']}`. "
                 "Ce choix privilégie le test sur données non vues; pour une traduction LSF complète, une solution "
                 "de phrase réelle évaluée en CER/WER prime sur une meilleure accuracy d'alphabet."
-                if ranking
+                if recommended
                 else
                 "Aucune meilleure solution ne peut encore être justifiée: aucune métrique test comparable n'est disponible."
             ),
