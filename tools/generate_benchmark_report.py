@@ -68,6 +68,44 @@ def data_inventory(root: Path) -> list[dict[str, Any]]:
     return inventory
 
 
+def rank_experiments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ranked = []
+    for row in rows:
+        if row.get("status") != "complete":
+            continue
+        score = None
+        basis = None
+        if isinstance(row.get("cer"), (int, float)):
+            score = 1.0 - float(row["cer"])
+            basis = "1-CER"
+        elif isinstance(row.get("test_accuracy"), (int, float)):
+            score = float(row["test_accuracy"])
+            basis = "test_accuracy"
+        if score is not None:
+            ranked.append({**row, "selection_score": score, "selection_basis": basis})
+    return sorted(ranked, key=lambda row: row["selection_score"], reverse=True)
+
+
+def face_decisions(comparisons: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    decisions = []
+    for comparison in comparisons:
+        deltas = comparison["delta_face_minus_no_face"]
+        metric = next((name for name in ("test_accuracy", "macro_f1", "chrf", "exact_match") if name in deltas), None)
+        lower_is_better = False
+        if metric is None:
+            metric = next((name for name in ("cer", "wer") if name in deltas), None)
+            lower_is_better = metric is not None
+        if metric is None:
+            decision = "inconclusive"
+            delta = None
+        else:
+            delta = float(deltas[metric])
+            effective = -delta if lower_is_better else delta
+            decision = "with_face" if effective > 0 else "without_face" if effective < 0 else "tie"
+        decisions.append({**comparison, "decision_metric": metric, "decision": decision, "decision_delta": delta})
+    return decisions
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Aggregate benchmark artifacts into JSON, CSV and Markdown reports.")
     parser.add_argument("--campaign-dir", type=Path, default=Path("runs/benchmark_5h"))
@@ -103,12 +141,16 @@ def main() -> None:
         ).strip()
     except Exception:
         gpu = "unavailable"
+    comparisons = face_decisions(comparisons)
+    ranking = rank_experiments(rows)
     report = {
         "campaign": state,
         "system": {"platform": platform.platform(), "python": platform.python_version(), "gpu": gpu},
         "datasets": data_inventory(root),
         "experiments": rows,
         "face_ablation": comparisons,
+        "ranking": ranking,
+        "recommended_solution": ranking[0] if ranking else None,
     }
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -144,8 +186,17 @@ def main() -> None:
     for comparison in comparisons:
         lines.append(
             f"### {comparison['with_face']} vs {comparison['without_face']}\n\n"
+            f"Décision : **{comparison['decision']}** selon `{comparison['decision_metric']}`. "
             f"Différences `avec - sans` : `{json.dumps(comparison['delta_face_minus_no_face'], ensure_ascii=False)}`"
         )
+    lines.extend(["", "## Classement global", ""])
+    if ranking:
+        lines.extend(
+            f"{index}. **{row['experiment']}** : `{row['selection_score']:.4f}` selon `{row['selection_basis']}`."
+            for index, row in enumerate(ranking, start=1)
+        )
+    else:
+        lines.append("Aucune expérience terminée ne possède encore une métrique test comparable.")
     lines.extend(
         [
             "",
@@ -158,9 +209,15 @@ def main() -> None:
             "",
             "## Conclusion",
             "",
-            "La conclusion finale doit privilégier les métriques test sur signeurs non vus, puis le CER/WER "
-            "sur phrases réelles, la latence et la stabilité temps réel. Elle ne doit pas être fondée uniquement "
-            "sur la validation ou sur les séquences synthétiques.",
+            (
+                f"La meilleure solution mesurée est **{ranking[0]['experiment']}**, avec un score de sélection "
+                f"`{ranking[0]['selection_score']:.4f}` fondé sur `{ranking[0]['selection_basis']}`. "
+                "Ce choix privilégie le test sur données non vues; pour une traduction LSF complète, une solution "
+                "de phrase réelle évaluée en CER/WER prime sur une meilleure accuracy d'alphabet."
+                if ranking
+                else
+                "Aucune meilleure solution ne peut encore être justifiée: aucune métrique test comparable n'est disponible."
+            ),
         ]
     )
     (args.output_dir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
