@@ -9,6 +9,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import matplotlib.pyplot as plt
+import numpy as np
+
 
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -185,6 +188,92 @@ def face_decisions(comparisons: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return decisions
 
 
+def read_metrics_csv(path: Path) -> list[dict[str, float]]:
+    if not path.exists():
+        return []
+    rows = []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        for raw in csv.DictReader(handle):
+            converted = {}
+            for key, value in raw.items():
+                try:
+                    converted[key] = float(value)
+                except (TypeError, ValueError):
+                    continue
+            rows.append(converted)
+    return rows
+
+
+def plot_training_curves(campaign_dir: Path, experiment_names: list[str], output_dir: Path) -> list[str]:
+    generated = []
+    for name in experiment_names:
+        rows = read_metrics_csv(campaign_dir / name / "metrics.csv")
+        if not rows:
+            continue
+        x_key = "elapsed_sec" if "elapsed_sec" in rows[0] else next(iter(rows[0]), None)
+        if not x_key:
+            continue
+        metric_keys = [
+            key
+            for key in rows[0]
+            if key != x_key and any(token in key for token in ("loss", "accuracy", "cer", "chrf", "f1"))
+        ]
+        if not metric_keys:
+            continue
+        figure, axes = plt.subplots(
+            len(metric_keys),
+            1,
+            figsize=(10, max(4, 2.8 * len(metric_keys))),
+            sharex=True,
+            squeeze=False,
+        )
+        x = np.asarray([row.get(x_key, np.nan) for row in rows], dtype=np.float64)
+        for axis, metric in zip(axes[:, 0], metric_keys):
+            y = np.asarray([row.get(metric, np.nan) for row in rows], dtype=np.float64)
+            axis.plot(x / 60.0 if x_key == "elapsed_sec" else x, y, linewidth=1.8)
+            axis.set_ylabel(metric)
+            axis.grid(alpha=0.25)
+        axes[-1, 0].set_xlabel("Minutes" if x_key == "elapsed_sec" else x_key)
+        figure.suptitle(f"Training curves - {name}")
+        figure.tight_layout()
+        target = output_dir / "training_curves" / f"{name}.png"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(target, dpi=170)
+        plt.close(figure)
+        generated.append(str(target))
+    return generated
+
+
+def plot_face_deltas(comparisons: list[dict[str, Any]], output_dir: Path) -> str | None:
+    values = []
+    labels = []
+    colors = []
+    for comparison in comparisons:
+        metric = comparison.get("decision_metric")
+        delta = comparison.get("decision_delta")
+        if metric is None or delta is None:
+            continue
+        effective = -float(delta) if metric in ("cer", "wer") else float(delta)
+        labels.append(comparison["with_face"].removesuffix("_face"))
+        values.append(effective)
+        colors.append("#2f9e44" if effective > 0 else "#c92a2a" if effective < 0 else "#868e96")
+    if not values:
+        return None
+    figure, axis = plt.subplots(figsize=(10, max(4, len(values) * 0.7)))
+    positions = np.arange(len(values))
+    axis.barh(positions, values, color=colors)
+    axis.axvline(0.0, color="#343a40", linewidth=1)
+    axis.set_yticks(positions, labels)
+    axis.set_xlabel("Advantage visage (positif = avec visage meilleur)")
+    axis.set_title("Impact du visage par solution")
+    axis.grid(axis="x", alpha=0.25)
+    figure.tight_layout()
+    target = output_dir / "face_ablation_deltas.png"
+    figure.savefig(target, dpi=180)
+    plt.close(figure)
+    return str(target)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Aggregate benchmark artifacts into JSON, CSV and Markdown reports.")
     parser.add_argument("--campaign-dir", type=Path, default=Path("runs/benchmark_5h"))
@@ -246,6 +335,10 @@ def main() -> None:
         "recommended_solution": recommended,
     }
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    report["artifacts"] = {
+        "training_curves": plot_training_curves(args.campaign_dir, [row["experiment"] for row in rows], args.output_dir),
+        "face_delta_chart": plot_face_deltas(comparisons, args.output_dir),
+    }
     (args.output_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     columns = sorted({key for row in rows for key in row})
     with (args.output_dir / "experiment_metrics.csv").open("w", newline="", encoding="utf-8") as handle:
