@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -26,6 +27,49 @@ def load_classifier(path: Path, device: torch.device) -> tuple[AlphabetClassifie
     model = AlphabetClassifier(jepa.context_encoder, int(config["jepa"]["d_model"]))
     model.load_state_dict(checkpoint["model"])
     return model.eval().to(device), config
+
+
+def calibration_metrics(predictions: list[dict], bins: int = 10) -> dict:
+    if not predictions:
+        return {"ece": 0.0, "mean_confidence": 0.0, "mean_confidence_correct": 0.0, "mean_confidence_wrong": 0.0}
+    confidences = np.asarray([row["confidence"] for row in predictions], dtype=np.float64)
+    correct = np.asarray([row["true"] == row["predicted"] for row in predictions], dtype=np.float64)
+    edges = np.linspace(0.0, 1.0, bins + 1)
+    ece = 0.0
+    calibration_bins = []
+    for index in range(bins):
+        lower, upper = edges[index], edges[index + 1]
+        selected = (confidences >= lower) & (confidences < upper if index < bins - 1 else confidences <= upper)
+        count = int(selected.sum())
+        if not count:
+            continue
+        accuracy = float(correct[selected].mean())
+        confidence = float(confidences[selected].mean())
+        ece += count / len(predictions) * abs(accuracy - confidence)
+        calibration_bins.append(
+            {"lower": float(lower), "upper": float(upper), "samples": count, "accuracy": accuracy, "confidence": confidence}
+        )
+    return {
+        "ece": float(ece),
+        "mean_confidence": float(confidences.mean()),
+        "mean_confidence_correct": float(confidences[correct == 1].mean()) if correct.any() else 0.0,
+        "mean_confidence_wrong": float(confidences[correct == 0].mean()) if (correct == 0).any() else 0.0,
+        "bins": calibration_bins,
+    }
+
+
+def signer_metrics(predictions: list[dict]) -> dict[str, dict]:
+    grouped = defaultdict(list)
+    for row in predictions:
+        grouped[str(row.get("signer_id") or "unknown")].append(row)
+    return {
+        signer: {
+            "samples": len(rows),
+            "accuracy": sum(row["true"] == row["predicted"] for row in rows) / len(rows),
+            "mean_confidence": float(np.mean([row["confidence"] for row in rows])),
+        }
+        for signer, rows in sorted(grouped.items())
+    }
 
 
 @torch.inference_mode()
@@ -101,6 +145,9 @@ def evaluate(checkpoint: Path, manifest: Path, output_dir: Path, drop_face: bool
         "samples": total,
         "face_features": "excluded" if drop_face else "included",
         **metrics,
+        "balanced_accuracy": metrics["macro_recall"],
+        "calibration": calibration_metrics(predictions),
+        "per_signer": signer_metrics(predictions),
         "per_letter_recall": {
             label: float(normalized[index, index])
             for index, label in enumerate(LABELS)
