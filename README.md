@@ -187,6 +187,18 @@ python tools/train_jepa.py \
   --max-minutes 60
 ```
 
+Mediapi-RGB peut être téléchargé puis préparé avec une seule commande après
+acceptation de sa licence ORTOLANG :
+
+```powershell
+.\.venv-jepa\Scripts\python.exe tools\bootstrap_lsf_datasets.py `
+  --open-ortolang --watch-downloads
+```
+
+Voir [`docs/mediapi_rgb.md`](docs/mediapi_rgb.md). Le manifest
+`mediapi_rgb_train.jsonl` sert à JEPA et `mediapi_rgb_text_train.jsonl` au
+décodage direct vidéo LSF vers français.
+
 Conversion et fine-tuning alphabet avec splits séparés par signeur :
 
 ```bash
@@ -242,9 +254,11 @@ python tools/train_mixed_direct_text.py \
   --train-manifest data/alphabet_canonical/manifests/alphabet_train.jsonl \
   --train-manifest data/direct_alphabet/manifests/direct_alphabet_train.jsonl \
   --train-manifest data/matignon_canonical/manifests/matignon_train.jsonl \
+  --train-manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl \
   --val-manifest data/alphabet_canonical/manifests/alphabet_val.jsonl \
   --val-manifest data/direct_alphabet/manifests/direct_alphabet_val.jsonl \
   --val-manifest data/matignon_canonical/manifests/matignon_val.jsonl \
+  --val-manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl \
   --output-dir runs/mixed_direct_text \
   --max-minutes 60
 ```

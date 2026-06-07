@@ -69,9 +69,19 @@ Priorités :
 - au moins trois signeurs réservés au test ;
 - plusieurs vitesses et distances caméra.
 
-### 5. Matignon vers phrase française
+### 5. Matignon et Mediapi-RGB vers phrase française
 
 Voir `docs/matignon_lsf.md`.
+
+Mediapi-RGB est préférable pour la supervision directe car les vidéos sont en
+LSF native et les sous-titres français sont alignés aux clips. Préparation :
+
+```powershell
+.\.venv-jepa\Scripts\python.exe tools\bootstrap_lsf_datasets.py `
+  --open-ortolang --watch-downloads
+```
+
+Voir `docs/mediapi_rgb.md`.
 
 ### 6. Fine-tuning mixte
 
@@ -82,14 +92,17 @@ Voir `docs/matignon_lsf.md`.
   --train-manifest data\direct_alphabet\manifests\direct_alphabet_train.jsonl `
   --train-manifest data\real_spelling\manifests\train.jsonl `
   --train-manifest data\matignon_canonical\manifests\matignon_train.jsonl `
+  --train-manifest data\mediapi_rgb_canonical\manifests\mediapi_rgb_text_train.jsonl `
   --val-manifest data\alphabet_canonical\manifests\alphabet_val.jsonl `
   --val-manifest data\direct_alphabet\manifests\direct_alphabet_val.jsonl `
   --val-manifest data\real_spelling\manifests\val.jsonl `
   --val-manifest data\matignon_canonical\manifests\matignon_val.jsonl `
+  --val-manifest data\mediapi_rgb_canonical\manifests\mediapi_rgb_text_val.jsonl `
   --test-manifest data\alphabet_canonical\manifests\alphabet_test.jsonl `
   --test-manifest data\direct_alphabet\manifests\direct_alphabet_test.jsonl `
   --test-manifest data\real_spelling\manifests\test.jsonl `
   --test-manifest data\matignon_canonical\manifests\matignon_test.jsonl `
+  --test-manifest data\mediapi_rgb_canonical\manifests\mediapi_rgb_text_test.jsonl `
   --output-dir runs\mixed_direct_text `
   --max-minutes 60
 ```

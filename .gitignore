@@ -16,6 +16,10 @@ data/type_a_canonical*/
 data/alphabet_continuous*/
 data/direct_alphabet*/
 data/matignon*/
+data/mediapi_rgb*/
+data/downloads/
+.secrets/
+*.cookies.txt
 checkpoints/*.ckpt
 checkpoints/*.pt
 checkpoints/mediapipe/
