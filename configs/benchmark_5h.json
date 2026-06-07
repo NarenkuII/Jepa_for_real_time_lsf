@@ -212,6 +212,74 @@
       ]
     },
     {
+      "name": "direct_alphabet_face",
+      "priority": 45,
+      "budget_minutes": 15,
+      "requires": [
+        "${ROOT}/data/alphabet_continuous/manifests/continuous_train.jsonl",
+        "${ROOT}/data/alphabet_continuous/manifests/continuous_val.jsonl",
+        "${ROOT}/data/alphabet_continuous/manifests/continuous_test.jsonl",
+        "${ROOT}/runs/benchmark_5h/jepa_face/final.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_mixed_direct_text.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/jepa_face/final.pt",
+          "--train-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_train.jsonl",
+          "--val-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_val.jsonl",
+          "--test-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_alphabet_face",
+          "--max-minutes", "12",
+          "--generation-samples", "160"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_mixed_direct_text.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/direct_alphabet_face/best.pt",
+          "--manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_alphabet_face/evaluation"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_text_predictions.py",
+          "--predictions", "${ROOT}/runs/benchmark_5h/direct_alphabet_face/evaluation/predictions.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_alphabet_face/evaluation"
+        ]
+      ]
+    },
+    {
+      "name": "direct_alphabet_no_face",
+      "priority": 46,
+      "budget_minutes": 15,
+      "requires": [
+        "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_train.jsonl",
+        "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_val.jsonl",
+        "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_test.jsonl",
+        "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_mixed_direct_text.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt",
+          "--train-manifest", "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_train.jsonl",
+          "--val-manifest", "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_val.jsonl",
+          "--test-manifest", "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_alphabet_no_face",
+          "--max-minutes", "12",
+          "--generation-samples", "160"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_mixed_direct_text.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/direct_alphabet_no_face/best.pt",
+          "--manifest", "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_alphabet_no_face/evaluation"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_text_predictions.py",
+          "--predictions", "${ROOT}/runs/benchmark_5h/direct_alphabet_no_face/evaluation/predictions.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_alphabet_no_face/evaluation"
+        ]
+      ]
+    },
+    {
       "name": "direct_transformer_face",
       "priority": 50,
       "budget_minutes": 25,

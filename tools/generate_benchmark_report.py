@@ -90,7 +90,7 @@ def rank_experiments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def task_name(experiment: str) -> str:
     if experiment.startswith(("direct_transformer", "jepa_llm")):
         return "phrase_translation"
-    if experiment.startswith("ctc_"):
+    if experiment.startswith(("ctc_", "direct_alphabet")):
         return "continuous_alphabet"
     if experiment.startswith("alphabet_"):
         return "isolated_alphabet"
@@ -199,6 +199,7 @@ def main() -> None:
         ("alphabet_jepa_face", "alphabet_jepa_no_face"),
         ("alphabet_scratch_face", "alphabet_scratch_no_face"),
         ("ctc_jepa_face", "ctc_jepa_no_face"),
+        ("direct_alphabet_face", "direct_alphabet_no_face"),
         ("direct_transformer_face", "direct_transformer_no_face"),
         ("jepa_llm_face", "jepa_llm_no_face"),
     )
