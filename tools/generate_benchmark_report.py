@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import importlib.metadata
 import json
 import math
 import platform
@@ -15,6 +17,36 @@ import numpy as np
 
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def git_revision(path: Path) -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=path,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return None
+
+
+def package_versions(names: tuple[str, ...]) -> dict[str, str | None]:
+    versions = {}
+    for name in names:
+        try:
+            versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[name] = None
+    return versions
 
 
 def nested(data: dict, *keys: str) -> Any:
@@ -71,6 +103,7 @@ def data_inventory(root: Path) -> list[dict[str, Any]]:
                 "rows": len(rows),
                 "with_text": sum(bool(row.get("text_fr") or row.get("text") or row.get("label")) for row in rows),
                 "signers": len({row.get("signer_id") for row in rows if row.get("signer_id")}),
+                "sha256": sha256_file(path),
             }
         )
     return inventory
@@ -330,7 +363,21 @@ def main() -> None:
     )
     report = {
         "campaign": state,
-        "system": {"platform": platform.platform(), "python": platform.python_version(), "gpu": gpu},
+        "system": {
+            "platform": platform.platform(),
+            "python": platform.python_version(),
+            "gpu": gpu,
+            "packages": package_versions(
+                ("numpy", "torch", "matplotlib", "mediapipe", "opencv-python", "transformers", "safetensors")
+            ),
+        },
+        "provenance": {
+            "main_commit": git_revision(root),
+            "ctc_commit": git_revision(root / ".benchmark" / "worktrees" / "continuous-ctc"),
+            "llm_commit": git_revision(root / ".benchmark" / "worktrees" / "jepa-llm"),
+            "campaign_config": read_json(root / "configs" / "benchmark_5h.json"),
+            "campaign_config_sha256": sha256_file(root / "configs" / "benchmark_5h.json"),
+        },
         "datasets": data_inventory(root),
         "experiments": rows,
         "face_ablation": comparisons,
@@ -359,6 +406,9 @@ def main() -> None:
         f"- Python : `{report['system']['python']}`",
         f"- GPU : `{gpu}`",
         f"- Temps campagne : `{state.get('elapsed_sec', 0) / 60:.1f} min`",
+        f"- Commit main : `{report['provenance']['main_commit']}`",
+        f"- Commit CTC : `{report['provenance']['ctc_commit']}`",
+        f"- Commit LLM : `{report['provenance']['llm_commit']}`",
         "",
         "## Résultats",
         "",
@@ -390,6 +440,21 @@ def main() -> None:
             )
     else:
         lines.append("Aucune expérience terminée ne possède encore une métrique test comparable.")
+    skipped = [
+        row
+        for row in rows
+        if row.get("status") not in ("complete", None)
+    ]
+    lines.extend(["", "## Expériences non terminées", ""])
+    if skipped:
+        for row in skipped:
+            state_row = state.get("experiments", {}).get(row["experiment"], {})
+            lines.append(
+                f"- `{row['experiment']}` : **{row.get('status')}** "
+                f"(`{json.dumps(state_row.get('missing') or state_row.get('commands'), ensure_ascii=False)}`)."
+            )
+    else:
+        lines.append("Toutes les expériences planifiées et disponibles ont terminé.")
     lines.extend(
         [
             "",
