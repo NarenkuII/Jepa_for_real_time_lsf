@@ -4,6 +4,7 @@
 - `direct_mixed_pipeline.md` : pipeline principal sans glosses ni CTC.
 - `matignon_lsf.md` : préparation, limites et format du corpus Matignon-LSF.
 - `mediapi_rgb.md` : téléchargement ORTOLANG, conversion et manifests Mediapi-RGB.
+- `benchmark_5h.md` : campagne autonome, ablation visage et rapport comparatif.
 
 La branche `main` utilise :
 

@@ -94,6 +94,7 @@ class MixedDirectTextDataset(Dataset):
         max_text_length: int = 384,
         max_frames: int = 512,
         mirror_probability: float = 0.0,
+        drop_face: bool = False,
     ):
         self.rows = []
         for manifest in manifests:
@@ -109,6 +110,7 @@ class MixedDirectTextDataset(Dataset):
         self.max_text_length = max_text_length
         self.max_frames = max_frames
         self.mirror_probability = mirror_probability
+        self.drop_face = drop_face
 
     @property
     def source_counts(self) -> Counter:
@@ -126,6 +128,8 @@ class MixedDirectTextDataset(Dataset):
                 keypoints = payload["keypoints"].astype(np.float32)
         if len(keypoints) > self.max_frames:
             keypoints = resample_sequence(keypoints, self.max_frames)
+        if self.drop_face:
+            keypoints[:, GROUPS.face] = 0.0
         if self.training:
             keypoints[..., :8] += np.random.normal(0.0, 0.006, keypoints[..., :8].shape).astype(np.float32)
             if np.random.random() < self.mirror_probability:

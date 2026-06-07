@@ -27,6 +27,7 @@ runs/*
 !runs/.gitkeep
 reports/*
 !reports/.gitkeep
+.benchmark/
 *.mp4
 *.avi
 *.mov

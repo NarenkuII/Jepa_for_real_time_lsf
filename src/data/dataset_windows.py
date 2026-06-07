@@ -6,7 +6,7 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from src.data.manifest import read_jsonl
-from src.keypoints.canonical import mirror_canonical_features
+from src.keypoints.canonical import GROUPS, mirror_canonical_features
 
 
 class SkeletonWindowDataset(Dataset):
@@ -18,6 +18,7 @@ class SkeletonWindowDataset(Dataset):
         seed: int = 42,
         joint_dropout: tuple[float, float] = (0.0, 0.0),
         mirror_probability: float = 0.0,
+        drop_face: bool = False,
     ):
         manifests = manifest if isinstance(manifest, list) else [manifest]
         self.rows = [row for path in manifests for row in read_jsonl(path)]
@@ -26,6 +27,7 @@ class SkeletonWindowDataset(Dataset):
         self.seed = seed
         self.joint_dropout = joint_dropout
         self.mirror_probability = mirror_probability
+        self.drop_face = drop_face
         if not self.rows:
             raise ValueError(f"Empty manifest(s): {manifests}")
 
@@ -36,6 +38,8 @@ class SkeletonWindowDataset(Dataset):
         row = self.rows[index]
         with np.load(row["keypoints"], allow_pickle=False) as payload:
             sequence = payload["keypoints"].astype(np.float32)
+        if self.drop_face:
+            sequence[:, GROUPS.face] = 0.0
         frames = sequence.shape[0]
         if frames >= self.window_size:
             if self.training:

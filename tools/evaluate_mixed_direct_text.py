@@ -25,11 +25,17 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--max-frames", type=int, default=512)
     parser.add_argument("--max-length", type=int, default=384)
+    parser.add_argument("--drop-face", action="store_true")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, tokenizer = load_direct_text_model(args.checkpoint, device)
-    dataset = MixedDirectTextDataset(args.manifest, tokenizer, max_frames=args.max_frames)
+    dataset = MixedDirectTextDataset(
+        args.manifest,
+        tokenizer,
+        max_frames=args.max_frames,
+        drop_face=args.drop_face,
+    )
     loader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_direct_text)
     grouped = defaultdict(lambda: {"predictions": [], "references": []})
     details = []
@@ -58,11 +64,15 @@ def main() -> None:
             "exact_match": exact_match(predictions, references),
         }
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    (args.output_dir / "report.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    report = {
+        "face_features": "excluded" if args.drop_face else "included",
+        "sources": metrics,
+    }
+    (args.output_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     with (args.output_dir / "predictions.jsonl").open("w", encoding="utf-8") as handle:
         for row in details:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    print(json.dumps(metrics, indent=2))
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":

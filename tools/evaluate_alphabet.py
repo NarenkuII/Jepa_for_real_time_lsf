@@ -13,6 +13,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.data.dataset_windows import SkeletonWindowDataset
+from src.evaluation.classification import classification_metrics
 from src.keypoints.canonical import NUM_FEATURES, NUM_JOINTS
 from src.models.alphabet_classifier import AlphabetClassifier, LABELS
 from src.training.pretrain_jepa import build_model_from_config
@@ -28,13 +29,14 @@ def load_classifier(path: Path, device: torch.device) -> tuple[AlphabetClassifie
 
 
 @torch.inference_mode()
-def evaluate(checkpoint: Path, manifest: Path, output_dir: Path) -> dict:
+def evaluate(checkpoint: Path, manifest: Path, output_dir: Path, drop_face: bool = False) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, config = load_classifier(checkpoint, device)
     dataset = SkeletonWindowDataset(
         manifest,
         window_size=int(config["data"]["window_size"]),
         training=False,
+        drop_face=drop_face,
     )
     confusion = np.zeros((len(LABELS), len(LABELS)), dtype=np.int64)
     predictions = []
@@ -93,10 +95,12 @@ def evaluate(checkpoint: Path, manifest: Path, output_dir: Path) -> dict:
     confusions.sort(key=lambda row: row["count"], reverse=True)
     correct = int(np.trace(confusion))
     total = int(confusion.sum())
+    metrics = classification_metrics(confusion, LABELS)
     report = {
         "checkpoint": str(checkpoint.resolve()),
         "samples": total,
-        "accuracy": correct / max(total, 1),
+        "face_features": "excluded" if drop_face else "included",
+        **metrics,
         "per_letter_recall": {
             label: float(normalized[index, index])
             for index, label in enumerate(LABELS)
@@ -113,8 +117,9 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, default=Path("data/alphabet_canonical/manifests/alphabet_test.jsonl"))
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--drop-face", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(evaluate(args.checkpoint, args.manifest, args.output_dir), indent=2))
+    print(json.dumps(evaluate(args.checkpoint, args.manifest, args.output_dir, args.drop_face), indent=2))
 
 
 if __name__ == "__main__":

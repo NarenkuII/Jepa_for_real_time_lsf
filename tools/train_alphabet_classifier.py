@@ -71,6 +71,7 @@ def main() -> None:
     parser.add_argument("--max-epochs", type=int, default=120)
     parser.add_argument("--patience", type=int, default=18)
     parser.add_argument("--scratch", action="store_true")
+    parser.add_argument("--drop-face", action="store_true")
     args = parser.parse_args()
 
     seed_everything(42)
@@ -91,6 +92,7 @@ def main() -> None:
             window_size,
             split == "train",
             mirror_probability=0.5 if split == "train" else 0.0,
+            drop_face=args.drop_face,
         )
         for split in ("train", "val", "test")
     }
@@ -173,6 +175,7 @@ def main() -> None:
         "test": test,
         "epochs": epoch,
         "initialization": "scratch" if args.scratch else "jepa",
+        "face_features": "excluded" if args.drop_face else "included",
         "elapsed_sec": time.perf_counter() - started,
         "split_sizes": {split: len(data) for split, data in datasets.items()},
         "split_signers": {

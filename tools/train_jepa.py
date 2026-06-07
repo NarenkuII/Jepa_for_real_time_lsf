@@ -73,6 +73,7 @@ def main() -> None:
     parser.add_argument("--max-minutes", type=float, default=60.0)
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--resume", type=Path)
+    parser.add_argument("--drop-face", action="store_true")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -92,8 +93,14 @@ def main() -> None:
         training=True,
         joint_dropout=(float(dropout_cfg[0]), float(dropout_cfg[1])),
         mirror_probability=float(config["data"].get("mirror_probability", 0.5)),
+        drop_face=args.drop_face,
     )
-    val_data = SkeletonWindowDataset(args.val_manifest, window_size=window_size, training=False)
+    val_data = SkeletonWindowDataset(
+        args.val_manifest,
+        window_size=window_size,
+        training=False,
+        drop_face=args.drop_face,
+    )
     loader_args = {
         "batch_size": int(pc["batch_size"]),
         "num_workers": int(pc.get("num_workers", 2)),

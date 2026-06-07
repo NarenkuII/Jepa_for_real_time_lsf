@@ -119,6 +119,7 @@ def main() -> None:
     parser.add_argument("--encoder-learning-rate", type=float, default=3e-5)
     parser.add_argument("--decoder-learning-rate", type=float, default=3e-4)
     parser.add_argument("--generation-samples", type=int, default=64)
+    parser.add_argument("--drop-face", action="store_true")
     args = parser.parse_args()
 
     seed_everything(42)
@@ -142,12 +143,14 @@ def main() -> None:
             max_text_length=args.max_text_length,
             max_frames=args.max_frames,
             mirror_probability=0.5,
+            drop_face=args.drop_face,
         ),
         "val": MixedDirectTextDataset(
             args.val_manifest,
             tokenizer,
             max_text_length=args.max_text_length,
             max_frames=args.max_frames,
+            drop_face=args.drop_face,
         ),
     }
     if args.test_manifest:
@@ -156,6 +159,7 @@ def main() -> None:
             tokenizer,
             max_text_length=args.max_text_length,
             max_frames=args.max_frames,
+            drop_face=args.drop_face,
         )
     source_weights = parse_source_weights(args.source_weight)
     loaders = {
@@ -260,6 +264,7 @@ def main() -> None:
         "elapsed_sec": time.perf_counter() - started,
         "source_counts": {split: dict(dataset.source_counts) for split, dataset in datasets.items()},
         "source_weights": source_weights or "equal_total_weight_per_source",
+        "face_features": "excluded" if args.drop_face else "included",
     }
     if "test" in loaders:
         best = torch.load(args.output_dir / "best.pt", map_location=device, weights_only=False)

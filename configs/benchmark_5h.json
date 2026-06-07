@@ -1,0 +1,348 @@
+{
+  "output_root": "${ROOT}/runs/benchmark_5h",
+  "variables": {
+    "CTC_ROOT": "${ROOT}/.benchmark/worktrees/continuous-ctc",
+    "LLM_ROOT": "${ROOT}/.benchmark/worktrees/jepa-llm"
+  },
+  "experiments": [
+    {
+      "name": "jepa_no_face",
+      "priority": 10,
+      "budget_minutes": 45,
+      "requires": [
+        "${ROOT}/data/type_a_canonical/manifests/type_a_train.jsonl",
+        "${ROOT}/data/type_a_canonical/manifests/type_a_val.jsonl"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_jepa.py",
+          "--config", "configs/pretrain_pilot.yaml",
+          "--train-manifest", "${ROOT}/data/type_a_canonical/manifests/type_a_train.jsonl",
+          "--val-manifest", "${ROOT}/data/type_a_canonical/manifests/type_a_val.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_no_face",
+          "--max-minutes", "42",
+          "--drop-face"
+        ]
+      ]
+    },
+    {
+      "name": "alphabet_jepa_face",
+      "priority": 20,
+      "budget_minutes": 15,
+      "requires": [
+        "${ROOT}/runs/graph_jepa_context_fix/best.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_alphabet_classifier.py",
+          "--checkpoint", "${ROOT}/runs/graph_jepa_context_fix/best.pt",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/alphabet_jepa_face",
+          "--max-minutes", "12"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_alphabet.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/alphabet_jepa_face/best.pt",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/alphabet_jepa_face/evaluation"
+        ]
+      ]
+    },
+    {
+      "name": "alphabet_jepa_no_face",
+      "priority": 21,
+      "budget_minutes": 15,
+      "requires": [
+        "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_alphabet_classifier.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/alphabet_jepa_no_face",
+          "--max-minutes", "12",
+          "--drop-face"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_alphabet.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/alphabet_jepa_no_face/best.pt",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/alphabet_jepa_no_face/evaluation",
+          "--drop-face"
+        ]
+      ]
+    },
+    {
+      "name": "alphabet_scratch_face",
+      "priority": 22,
+      "budget_minutes": 15,
+      "requires": [
+        "${ROOT}/runs/graph_jepa_context_fix/best.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_alphabet_classifier.py",
+          "--checkpoint", "${ROOT}/runs/graph_jepa_context_fix/best.pt",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/alphabet_scratch_face",
+          "--max-minutes", "12",
+          "--scratch"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_alphabet.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/alphabet_scratch_face/best.pt",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/alphabet_scratch_face/evaluation"
+        ]
+      ]
+    },
+    {
+      "name": "alphabet_scratch_no_face",
+      "priority": 23,
+      "budget_minutes": 15,
+      "requires": [
+        "${ROOT}/runs/graph_jepa_context_fix/best.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_alphabet_classifier.py",
+          "--checkpoint", "${ROOT}/runs/graph_jepa_context_fix/best.pt",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/alphabet_scratch_no_face",
+          "--max-minutes", "12",
+          "--scratch",
+          "--drop-face"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_alphabet.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/alphabet_scratch_no_face/best.pt",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/alphabet_scratch_no_face/evaluation",
+          "--drop-face"
+        ]
+      ]
+    },
+    {
+      "name": "prepare_continuous_no_face",
+      "priority": 30,
+      "budget_minutes": 10,
+      "requires": [
+        "${ROOT}/data/alphabet_continuous/manifests/continuous_train.jsonl"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/build_feature_ablation_dataset.py",
+          "--source-root", "${ROOT}/data/alphabet_continuous",
+          "--output-root", "${ROOT}/data/alphabet_continuous_no_face",
+          "--drop-face"
+        ]
+      ]
+    },
+    {
+      "name": "ctc_jepa_face",
+      "priority": 40,
+      "budget_minutes": 30,
+      "cwd": "${CTC_ROOT}",
+      "requires": [
+        "${CTC_ROOT}/tools/train_continuous_ctc.py",
+        "${ROOT}/runs/graph_jepa_context_fix/best.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_continuous_ctc.py",
+          "--checkpoint", "${ROOT}/runs/graph_jepa_context_fix/best.pt",
+          "--data-root", "${ROOT}/data/alphabet_continuous",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/ctc_jepa_face",
+          "--max-minutes", "27"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_continuous_dataset.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/ctc_jepa_face/best.pt",
+          "--manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_test.jsonl",
+          "--output", "${ROOT}/runs/benchmark_5h/ctc_jepa_face/evaluation/predictions.jsonl"
+        ],
+        [
+          "${PYTHON}", "${ROOT}/tools/evaluate_text_predictions.py",
+          "--predictions", "${ROOT}/runs/benchmark_5h/ctc_jepa_face/evaluation/predictions.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/ctc_jepa_face/evaluation"
+        ]
+      ]
+    },
+    {
+      "name": "ctc_jepa_no_face",
+      "priority": 41,
+      "budget_minutes": 30,
+      "cwd": "${CTC_ROOT}",
+      "requires": [
+        "${CTC_ROOT}/tools/train_continuous_ctc.py",
+        "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_train.jsonl",
+        "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_continuous_ctc.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt",
+          "--data-root", "${ROOT}/data/alphabet_continuous_no_face",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/ctc_jepa_no_face",
+          "--max-minutes", "27"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_continuous_dataset.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/ctc_jepa_no_face/best.pt",
+          "--manifest", "${ROOT}/data/alphabet_continuous_no_face/manifests/continuous_test.jsonl",
+          "--output", "${ROOT}/runs/benchmark_5h/ctc_jepa_no_face/evaluation/predictions.jsonl"
+        ],
+        [
+          "${PYTHON}", "${ROOT}/tools/evaluate_text_predictions.py",
+          "--predictions", "${ROOT}/runs/benchmark_5h/ctc_jepa_no_face/evaluation/predictions.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/ctc_jepa_no_face/evaluation"
+        ]
+      ]
+    },
+    {
+      "name": "direct_transformer_face",
+      "priority": 50,
+      "budget_minutes": 35,
+      "requires": [
+        "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl",
+        "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl",
+        "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_mixed_direct_text.py",
+          "--checkpoint", "${ROOT}/runs/graph_jepa_context_fix/best.pt",
+          "--train-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_train.jsonl",
+          "--train-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl",
+          "--val-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_val.jsonl",
+          "--val-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl",
+          "--test-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_test.jsonl",
+          "--test-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_transformer_face",
+          "--max-minutes", "32"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_mixed_direct_text.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/direct_transformer_face/best.pt",
+          "--manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_transformer_face/evaluation"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_text_predictions.py",
+          "--predictions", "${ROOT}/runs/benchmark_5h/direct_transformer_face/evaluation/predictions.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_transformer_face/evaluation"
+        ]
+      ]
+    },
+    {
+      "name": "direct_transformer_no_face",
+      "priority": 51,
+      "budget_minutes": 35,
+      "requires": [
+        "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl",
+        "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl",
+        "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl",
+        "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_mixed_direct_text.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt",
+          "--train-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_train.jsonl",
+          "--train-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl",
+          "--val-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_val.jsonl",
+          "--val-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl",
+          "--test-manifest", "${ROOT}/data/alphabet_continuous/manifests/continuous_test.jsonl",
+          "--test-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_transformer_no_face",
+          "--max-minutes", "32",
+          "--drop-face"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_mixed_direct_text.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/direct_transformer_no_face/best.pt",
+          "--manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_transformer_no_face/evaluation",
+          "--drop-face"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_text_predictions.py",
+          "--predictions", "${ROOT}/runs/benchmark_5h/direct_transformer_no_face/evaluation/predictions.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/direct_transformer_no_face/evaluation"
+        ]
+      ]
+    },
+    {
+      "name": "prepare_mediapi_no_face",
+      "priority": 60,
+      "budget_minutes": 10,
+      "requires": [
+        "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/build_feature_ablation_dataset.py",
+          "--source-root", "${ROOT}/data/mediapi_rgb_canonical",
+          "--output-root", "${ROOT}/data/mediapi_rgb_canonical_no_face",
+          "--drop-face"
+        ]
+      ]
+    },
+    {
+      "name": "jepa_llm_face",
+      "priority": 70,
+      "budget_minutes": 20,
+      "cwd": "${LLM_ROOT}",
+      "requires": [
+        "${LLM_ROOT}/tools/train_jepa_llm.py",
+        "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_jepa_llm.py",
+          "--jepa-checkpoint", "${ROOT}/runs/graph_jepa_context_fix/best.pt",
+          "--train-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl",
+          "--val-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_llm_face",
+          "--max-minutes", "17"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_jepa_llm.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/jepa_llm_face/best_adapter.pt",
+          "--manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_llm_face/evaluation"
+        ],
+        [
+          "${PYTHON}", "${ROOT}/tools/evaluate_text_predictions.py",
+          "--predictions", "${ROOT}/runs/benchmark_5h/jepa_llm_face/evaluation/predictions.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_llm_face/evaluation"
+        ]
+      ]
+    },
+    {
+      "name": "jepa_llm_no_face",
+      "priority": 71,
+      "budget_minutes": 20,
+      "cwd": "${LLM_ROOT}",
+      "requires": [
+        "${LLM_ROOT}/tools/train_jepa_llm.py",
+        "${ROOT}/data/mediapi_rgb_canonical_no_face/manifests/mediapi_rgb_text_train.jsonl",
+        "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt"
+      ],
+      "commands": [
+        [
+          "${PYTHON}", "tools/train_jepa_llm.py",
+          "--jepa-checkpoint", "${ROOT}/runs/benchmark_5h/jepa_no_face/final.pt",
+          "--train-manifest", "${ROOT}/data/mediapi_rgb_canonical_no_face/manifests/mediapi_rgb_text_train.jsonl",
+          "--val-manifest", "${ROOT}/data/mediapi_rgb_canonical_no_face/manifests/mediapi_rgb_text_val.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_llm_no_face",
+          "--max-minutes", "17"
+        ],
+        [
+          "${PYTHON}", "tools/evaluate_jepa_llm.py",
+          "--checkpoint", "${ROOT}/runs/benchmark_5h/jepa_llm_no_face/best_adapter.pt",
+          "--manifest", "${ROOT}/data/mediapi_rgb_canonical_no_face/manifests/mediapi_rgb_text_test.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_llm_no_face/evaluation"
+        ],
+        [
+          "${PYTHON}", "${ROOT}/tools/evaluate_text_predictions.py",
+          "--predictions", "${ROOT}/runs/benchmark_5h/jepa_llm_no_face/evaluation/predictions.jsonl",
+          "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_llm_no_face/evaluation"
+        ]
+      ]
+    }
+  ]
+}
