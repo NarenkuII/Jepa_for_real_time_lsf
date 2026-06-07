@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -39,10 +40,18 @@ def main() -> None:
     loader = DataLoader(dataset, batch_size=args.batch_size, collate_fn=collate_direct_text)
     grouped = defaultdict(lambda: {"predictions": [], "references": []})
     details = []
+    generation_times_ms = []
     for batch in loader:
         keypoints = torch.from_numpy(batch["keypoints"]).to(device)
         mask = torch.from_numpy(batch["keypoint_mask"]).to(device)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        started = time.perf_counter()
         generated = model.greedy_decode(keypoints, mask, max_len=args.max_length)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        generation_times_ms.extend([elapsed_ms / len(batch["ids"])] * len(batch["ids"]))
         for sample_id, source, reference, ids in zip(
             batch["ids"], batch["source_types"], batch["texts"], generated
         ):
@@ -67,6 +76,17 @@ def main() -> None:
     report = {
         "face_features": "excluded" if args.drop_face else "included",
         "sources": metrics,
+        "runtime": {
+            "device": str(device),
+            "parameters": sum(parameter.numel() for parameter in model.parameters()),
+            "checkpoint_bytes": args.checkpoint.stat().st_size,
+            "latency_ms_mean": sum(generation_times_ms) / max(len(generation_times_ms), 1),
+            "latency_ms_p95": sorted(generation_times_ms)[
+                min(len(generation_times_ms) - 1, int(0.95 * len(generation_times_ms)))
+            ]
+            if generation_times_ms
+            else 0.0,
+        },
     }
     (args.output_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     with (args.output_dir / "predictions.jsonl").open("w", encoding="utf-8") as handle:

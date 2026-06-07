@@ -50,6 +50,9 @@ def experiment_metrics(directory: Path) -> dict[str, Any]:
             sequence.get("exact_match"),
         ),
         "elapsed_sec": summary.get("elapsed_sec"),
+        "latency_ms_p95": nested(evaluation, "runtime", "latency_ms_p95"),
+        "parameters": nested(evaluation, "runtime", "parameters"),
+        "checkpoint_bytes": nested(evaluation, "runtime", "checkpoint_bytes"),
     }
     return {key: value for key, value in metrics.items() if value is not None}
 
@@ -358,15 +361,15 @@ def main() -> None:
         "",
         "## Résultats",
         "",
-        "| Expérience | Statut | Accuracy | Precision macro | Recall macro | F1 macro | CER | WER | chrF | Exact |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Expérience | Statut | Accuracy | Precision macro | Recall macro | F1 macro | CER | WER | chrF | Exact | P95 ms |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         value = lambda key: f"{row[key]:.4f}" if isinstance(row.get(key), (int, float)) else ""
         lines.append(
             f"| {row['experiment']} | {row.get('status', '')} | {value('test_accuracy')} | "
             f"{value('macro_precision')} | {value('macro_recall')} | {value('macro_f1')} | "
-            f"{value('cer')} | {value('wer')} | {value('chrf')} | {value('exact_match')} |"
+            f"{value('cer')} | {value('wer')} | {value('chrf')} | {value('exact_match')} | {value('latency_ms_p95')} |"
         )
     lines.extend(["", "## Impact du visage", ""])
     for comparison in comparisons:

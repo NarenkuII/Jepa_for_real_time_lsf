@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -84,10 +85,18 @@ def evaluate(checkpoint: Path, manifest: Path, output_dir: Path, drop_face: bool
     )
     confusion = np.zeros((len(LABELS), len(LABELS)), dtype=np.int64)
     predictions = []
+    inference_times_ms = []
     for item, row in zip(dataset, dataset.rows):
         x = torch.from_numpy(item["keypoints"]).unsqueeze(0).to(device)
         mask = torch.from_numpy(item["padding_mask"]).unsqueeze(0).to(device)
-        probabilities = torch.softmax(model(x, mask), dim=-1)[0].cpu().numpy()
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        started = time.perf_counter()
+        logits = model(x, mask)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        inference_times_ms.append((time.perf_counter() - started) * 1000.0)
+        probabilities = torch.softmax(logits, dim=-1)[0].cpu().numpy()
         true_index = LABELS.index(row["label"])
         predicted_index = int(probabilities.argmax())
         confusion[true_index, predicted_index] += 1
@@ -148,6 +157,15 @@ def evaluate(checkpoint: Path, manifest: Path, output_dir: Path, drop_face: bool
         "balanced_accuracy": metrics["macro_recall"],
         "calibration": calibration_metrics(predictions),
         "per_signer": signer_metrics(predictions),
+        "runtime": {
+            "device": str(device),
+            "parameters": sum(parameter.numel() for parameter in model.parameters()),
+            "checkpoint_bytes": checkpoint.stat().st_size,
+            "latency_ms_mean": float(np.mean(inference_times_ms)),
+            "latency_ms_p50": float(np.percentile(inference_times_ms, 50)),
+            "latency_ms_p95": float(np.percentile(inference_times_ms, 95)),
+            "samples_per_second": float(1000.0 / max(np.mean(inference_times_ms), 1e-9)),
+        },
         "per_letter_recall": {
             label: float(normalized[index, index])
             for index, label in enumerate(LABELS)
