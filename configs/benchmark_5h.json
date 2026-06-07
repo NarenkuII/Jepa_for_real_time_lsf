@@ -20,7 +20,9 @@
           "--train-manifest", "${ROOT}/data/type_a_canonical/manifests/type_a_train.jsonl",
           "--val-manifest", "${ROOT}/data/type_a_canonical/manifests/type_a_val.jsonl",
           "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_face",
-          "--max-minutes", "32"
+          "--max-minutes", "32",
+          "--max-steps", "5000",
+          "--schedule-steps", "5000"
         ]
       ]
     },
@@ -40,6 +42,8 @@
           "--val-manifest", "${ROOT}/data/type_a_canonical/manifests/type_a_val.jsonl",
           "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_no_face",
           "--max-minutes", "32",
+          "--max-steps", "5000",
+          "--schedule-steps", "5000",
           "--drop-face"
         ]
       ]

@@ -72,6 +72,11 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("runs/jepa_pilot"))
     parser.add_argument("--max-minutes", type=float, default=60.0)
     parser.add_argument("--max-steps", type=int)
+    parser.add_argument(
+        "--schedule-steps",
+        type=int,
+        help="Use deterministic step-based LR/EMA scheduling instead of elapsed time.",
+    )
     parser.add_argument("--resume", type=Path)
     parser.add_argument("--drop-face", action="store_true")
     args = parser.parse_args()
@@ -164,7 +169,12 @@ def main() -> None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 scaler.step(optimizer)
                 scaler.update()
-                progress = min(1.0, elapsed / max_sec)
+                progress = min(
+                    1.0,
+                    step / args.schedule_steps
+                    if args.schedule_steps
+                    else elapsed / max_sec,
+                )
                 lr = base_lr * (0.1 + 0.9 * (math.cos(math.pi * progress) + 1.0) * 0.5)
                 for group in optimizer.param_groups:
                     group["lr"] = lr
