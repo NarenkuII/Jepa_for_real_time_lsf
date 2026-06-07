@@ -211,6 +211,48 @@ Matrice de confusion du jeu test :
   --output-dir reports\alphabet_graph_jepa
 ```
 
+### Alphabet continu avec CTC
+
+Le générateur crée des recettes de séquences sans recopier les fichiers de
+keypoints. Il accepte des chaînes aléatoires ou un fichier UTF-8 contenant un
+mot/une phrase par ligne :
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\build_continuous_alphabet_dataset.py \
+  --train-count 4000 --val-count 400 --test-count 400
+
+.\.venv-jepa\Scripts\python.exe tools\build_continuous_alphabet_dataset.py \
+  --text-corpus data\my_words.txt --max-letters 24
+```
+
+Les espaces et la ponctuation sont gardés en métadonnées mais les cibles CTC
+restent `A-Z`. Entraînement et contrôle `AABB` :
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\train_continuous_ctc.py \
+  --checkpoint runs\graph_jepa_context_fix\best.pt \
+  --output-dir runs\alphabet_continuous_ctc \
+  --max-minutes 60
+
+.\.venv-jepa\Scripts\python.exe tools\evaluate_continuous_ctc.py \
+  --checkpoint runs\alphabet_continuous_ctc\best.pt
+```
+
+Webcam, y compris DroidCam exposée comme caméra virtuelle :
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\realtime_continuous_alphabet.py --list-cameras
+.\.venv-jepa\Scripts\python.exe tools\realtime_continuous_alphabet.py \
+  --camera 1 --backend dshow \
+  --checkpoint runs\alphabet_continuous_ctc\best.pt
+```
+
+Le texte `LIVE` est redécodé sur le segment courant et évolue donc à chaque
+nouvelle lettre. Une absence prolongée des mains clôt le segment. Le chargeur
+accepte aussi un manifest de vrais clips continus avec les champs
+`id`, `split`, `keypoints` et `text`; ceux-ci sont préférables aux transitions
+interpolées pour la validation finale.
+
 ```bash
 python tools/predict_segment.py \
   --video data/raw/test/video_001.mp4 \
