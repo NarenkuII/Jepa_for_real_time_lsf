@@ -253,6 +253,21 @@ accepte aussi un manifest de vrais clips continus avec les champs
 `id`, `split`, `keypoints` et `text`; ceux-ci sont préférables aux transitions
 interpolées pour la validation finale.
 
+### Expérience JEPA vers LLM
+
+La branche expérimentale peut convertir la mémoire JEPA en soft-prefix tokens
+pour un petit modèle de langue causal. Elle exige des manifests de clips LSF
+associés à `text_fr`; voir `docs/jepa_llm_experiment.md`.
+
+```bash
+.\.venv-jepa\Scripts\python.exe -m pip install -e ".[llm]"
+.\.venv-jepa\Scripts\python.exe tools\train_jepa_llm.py \
+  --train-manifest data\phrases\train.jsonl \
+  --val-manifest data\phrases\val.jsonl
+.\.venv-jepa\Scripts\python.exe tools\realtime_jepa_llm.py \
+  --checkpoint runs\jepa_llm\best_adapter.pt
+```
+
 ```bash
 python tools/predict_segment.py \
   --video data/raw/test/video_001.mp4 \

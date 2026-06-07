@@ -20,6 +20,7 @@ dependencies = [
 dev = ["pytest>=8.0"]
 vision = ["opencv-python>=4.9", "mediapipe>=0.10"]
 text = ["sentencepiece>=0.2"]
+llm = ["transformers>=4.45", "safetensors>=0.4"]
 viz = ["scikit-learn>=1.4"]
 
 [tool.setuptools.packages.find]
@@ -29,4 +30,3 @@ include = ["src*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-
