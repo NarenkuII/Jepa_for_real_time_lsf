@@ -6,14 +6,16 @@ from src.data.collate import pad_keypoints
 
 
 class JepaLlmCollator:
-    def __init__(self, tokenizer, max_text_length: int = 128):
+    def __init__(self, tokenizer, max_text_length: int = 128, prompt_prefix: str = "Traduction LSF en français : "):
         self.tokenizer = tokenizer
         self.max_text_length = max_text_length
+        self.prompt_prefix = prompt_prefix
 
     def __call__(self, batch: list[dict]) -> dict:
         keypoints, skeleton_mask = pad_keypoints(batch)
+        texts_with_prompt = [f"{self.prompt_prefix}{item['text']}" for item in batch]
         encoded = self.tokenizer(
-            [item["text"] for item in batch],
+            texts_with_prompt,
             add_special_tokens=True,
             padding=True,
             truncation=True,

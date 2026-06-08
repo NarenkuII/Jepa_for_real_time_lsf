@@ -4,7 +4,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from src.models.jepa_llm import JepaLlmPrefix
+from src.models.jepa_llm import JepaLlmPrefix, bidirectional_alignment_loss
 
 
 class TinyEncoder(torch.nn.Module):
@@ -47,8 +47,36 @@ def test_jepa_llm_prefix_forward_and_generate():
     text_mask = torch.ones_like(input_ids, dtype=torch.bool)
     output = model(keypoints, skeleton_mask, input_ids, text_mask)
     assert torch.isfinite(output.loss)
+    assert torch.isfinite(output.generation_loss)
+    assert torch.isfinite(output.alignment_loss)
+    assert -1.0 <= float(output.alignment_cosine) <= 1.0
     output.loss.backward()
     assert llm.embedding.weight.grad is None
+    assert model.projector[-1].weight.grad is not None
+    state = model.adapter_state_dict()
+    assert state["llm_trainable"] == {}
+    model.load_adapter_state_dict(state)
     generated = model.greedy_generate(keypoints, skeleton_mask, 1, 2, max_new_tokens=3)
     assert generated.shape[0] == 2
     assert generated.shape[1] <= 4
+
+
+def test_alignment_loss_supports_single_sample():
+    visual = torch.tensor([[1.0, 0.0]], requires_grad=True)
+    text = torch.tensor([[0.0, 1.0]])
+    loss = bidirectional_alignment_loss(visual, text)
+    assert loss > 0
+    loss.backward()
+    assert visual.grad is not None
+
+
+def test_adapter_checkpoint_restores_trainable_llm_weights():
+    llm = TinyCausalLM()
+    model = JepaLlmPrefix(TinyEncoder(), 16, llm, prefix_tokens=4, resampler_heads=4)
+    model.llm.output.requires_grad_(True)
+    state = model.adapter_state_dict()
+    expected = state["llm_trainable"]["output.weight"].clone()
+    with torch.no_grad():
+        model.llm.output.weight.zero_()
+    model.load_adapter_state_dict(state)
+    assert torch.equal(model.llm.output.weight, expected)
