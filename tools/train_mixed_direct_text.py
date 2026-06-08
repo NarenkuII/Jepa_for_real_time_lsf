@@ -120,6 +120,7 @@ def main() -> None:
     parser.add_argument("--decoder-learning-rate", type=float, default=3e-4)
     parser.add_argument("--generation-samples", type=int, default=64)
     parser.add_argument("--drop-face", action="store_true")
+    parser.add_argument("--no-amp", action="store_true")
     args = parser.parse_args()
 
     seed_everything(42)
@@ -193,7 +194,8 @@ def main() -> None:
         ),
         weight_decay=0.02,
     )
-    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
+    amp_enabled = device.type == "cuda" and not args.no_amp
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
     best_cer = float("inf")
     stale = 0
     epoch = 0
@@ -217,9 +219,14 @@ def main() -> None:
                 mask = torch.from_numpy(batch["keypoint_mask"]).to(device, non_blocking=True)
                 tokens = torch.from_numpy(batch["tokens"]).to(device, non_blocking=True)
                 optimizer.zero_grad(set_to_none=True)
-                with torch.amp.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+                with torch.amp.autocast("cuda", dtype=torch.float16, enabled=amp_enabled):
                     logits = model(keypoints, tokens[:, :-1], mask)
                     loss = sequence_cross_entropy(logits, tokens[:, 1:], tokenizer.pad_id, label_smoothing=0.05)
+                if not torch.isfinite(loss):
+                    raise FloatingPointError(
+                        f"Non-finite loss for batch ids={batch['ids'][:4]}; "
+                        f"keypoint_abs_max={float(keypoints.abs().max())}"
+                    )
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

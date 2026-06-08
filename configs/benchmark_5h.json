@@ -390,6 +390,10 @@
           "--train-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl",
           "--val-manifest", "${ROOT}/data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl",
           "--output-dir", "${ROOT}/runs/benchmark_5h/jepa_llm_face",
+          "--alignment-weight", "0.2",
+          "--alignment-temperature", "0.07",
+          "--unfreeze-last-layers", "2",
+          "--llm-learning-rate", "1e-5",
           "--max-minutes", "12"
         ],
         [

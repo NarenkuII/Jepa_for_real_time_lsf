@@ -27,6 +27,11 @@ def main() -> None:
     parser.add_argument("--crop", default="494:494:1334:417", help="ffmpeg crop=w:h:x:y")
     parser.add_argument("--max-videos", type=int, default=0)
     parser.add_argument("--keep-raw", action="store_true")
+    parser.add_argument(
+        "--cookies-from-browser",
+        help="Browser profile passed to yt-dlp, for example firefox.",
+    )
+    parser.add_argument("--sleep-requests", type=float, default=0.0)
     args = parser.parse_args()
 
     yt_dlp = require_command("yt-dlp")
@@ -46,18 +51,27 @@ def main() -> None:
             continue
         raw_template = raw_dir / f"{video_id}.%(ext)s"
         print(f"[{index}/{len(video_ids)}] {video_id}: downloading", flush=True)
+        download_args = [
+            yt_dlp,
+            "--no-playlist",
+            "-f",
+            "bestvideo[height>=720]+bestaudio/best[height>=720]",
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            str(raw_template),
+        ]
+        if args.cookies_from_browser:
+            download_args.extend(("--cookies-from-browser", args.cookies_from_browser))
+            node = shutil.which("node")
+            if node:
+                download_args.extend(("--js-runtimes", f"node:{node}"))
+                download_args.extend(("--remote-components", "ejs:github"))
+        if args.sleep_requests:
+            download_args.extend(("--sleep-requests", str(args.sleep_requests)))
+        download_args.append(f"https://www.youtube.com/watch?v={video_id}")
         download = subprocess.run(
-            (
-                yt_dlp,
-                "--no-playlist",
-                "-f",
-                "bestvideo[height>=720]+bestaudio/best[height>=720]",
-                "--merge-output-format",
-                "mp4",
-                "-o",
-                str(raw_template),
-                f"https://www.youtube.com/watch?v={video_id}",
-            ),
+            download_args,
             check=False,
         )
         raw = raw_dir / f"{video_id}.mp4"

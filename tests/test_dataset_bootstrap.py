@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import zipfile
 
 import numpy as np
@@ -64,6 +65,55 @@ def test_prepare_mediapi_rgb_npz_and_metadata(tmp_path):
     assert report["with_text"] == 1
     rows = read_jsonl(output / "manifests" / "mediapi_rgb_text_train.jsonl")
     assert rows[0]["text_fr"] == "bonjour"
+    with np.load(rows[0]["keypoints"]) as payload:
+        assert payload["keypoints"].shape == (frames, NUM_JOINTS, NUM_FEATURES)
+        assert np.isfinite(payload["keypoints"]).all()
+
+
+def test_prepare_official_mediapi_rgb_nested_archives(tmp_path):
+    source = tmp_path / "raw"
+    data = source / "export" / "data"
+    information = source / "export" / "information"
+    data.mkdir(parents=True)
+    information.mkdir(parents=True)
+    sample_id = "clip_001"
+
+    with (data / "subtitles.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=("id", "text"))
+        writer.writeheader()
+        writer.writerow({"id": sample_id, "text": "bonjour"})
+    with (information / "info_mediapirgb.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=("video_id", "fps", "split"))
+        writer.writeheader()
+        writer.writerow({"video_id": sample_id, "fps": "25", "split": "val"})
+
+    frames = 3
+
+    def table(landmarks):
+        values = np.zeros((frames, 1 + landmarks * 4), dtype=np.float32)
+        values[:, 0] = np.arange(frames)
+        reshaped = values[:, 1:].reshape(frames, landmarks, 4)
+        reshaped[..., 0] = np.linspace(10, 100, landmarks)
+        reshaped[..., 1] = np.linspace(20, 120, landmarks)
+        return "\n".join("\t".join(str(value) for value in row) for row in values)
+
+    inner_bytes = io.BytesIO()
+    with zipfile.ZipFile(inner_bytes, "w") as inner:
+        inner.writestr(f"mediapipe/{sample_id}/{sample_id}_pose.csv", table(33))
+        inner.writestr(f"mediapipe/{sample_id}/{sample_id}_face.csv", table(468))
+        inner.writestr(f"mediapipe/{sample_id}/{sample_id}_left_hand.csv", table(21))
+        inner.writestr(f"mediapipe/{sample_id}/{sample_id}_right_hand.csv", table(21))
+    with zipfile.ZipFile(data / "mediapipe1.zip", "w") as outer:
+        outer.writestr(f"mediapipe1/{sample_id}.zip", inner_bytes.getvalue())
+
+    output = tmp_path / "canonical"
+    report = prepare_mediapi_rgb(source, output)
+
+    assert report["converted"] == 1
+    assert report["with_text"] == 1
+    rows = read_jsonl(output / "manifests" / "mediapi_rgb_text_val.jsonl")
+    assert rows[0]["text_fr"] == "bonjour"
+    assert "::mediapipe1/clip_001.zip" in rows[0]["source_keypoints"]
     with np.load(rows[0]["keypoints"]) as payload:
         assert payload["keypoints"].shape == (frames, NUM_JOINTS, NUM_FEATURES)
         assert np.isfinite(payload["keypoints"]).all()

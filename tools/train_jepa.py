@@ -99,12 +99,14 @@ def main() -> None:
         joint_dropout=(float(dropout_cfg[0]), float(dropout_cfg[1])),
         mirror_probability=float(config["data"].get("mirror_probability", 0.5)),
         drop_face=args.drop_face,
+        target_fps=float(config["data"].get("target_fps", 25.0)),
     )
     val_data = SkeletonWindowDataset(
         args.val_manifest,
         window_size=window_size,
         training=False,
         drop_face=args.drop_face,
+        target_fps=float(config["data"].get("target_fps", 25.0)),
     )
     loader_args = {
         "batch_size": int(pc["batch_size"]),
@@ -164,6 +166,11 @@ def main() -> None:
                 optimizer.zero_grad(set_to_none=True)
                 with torch.amp.autocast("cuda", dtype=torch.float16):
                     out = model(x, mask=mask, padding_mask=padding)
+                if not torch.isfinite(out["loss"]):
+                    raise FloatingPointError(
+                        f"Non-finite JEPA loss for batch ids={batch['id'][:4]}; "
+                        f"keypoint_abs_max={float(x.abs().max())}"
+                    )
                 scaler.scale(out["loss"]).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

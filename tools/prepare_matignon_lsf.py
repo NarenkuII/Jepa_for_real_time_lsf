@@ -4,9 +4,11 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
 import sys
 import zipfile
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +22,21 @@ from src.keypoints.mediapipe_tasks import MediaPipeTasksExtractor
 TIMESTAMP = re.compile(
     r"(?P<start>\d{2}:\d{2}:\d{2}[.,]\d{3})\s+-->\s+(?P<end>\d{2}:\d{2}:\d{2}[.,]\d{3})"
 )
+_WORKER_EXTRACTOR = None
+
+
+def _init_worker(model_dir: str, delegate: str) -> None:
+    global _WORKER_EXTRACTOR
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("TF_NUM_INTRAOP_THREADS", "1")
+    os.environ.setdefault("TF_NUM_INTEROP_THREADS", "1")
+    try:
+        import cv2
+
+        cv2.setNumThreads(1)
+    except Exception:
+        pass
+    _WORKER_EXTRACTOR = MediaPipeTasksExtractor.create_with_fallback(model_dir, delegate)
 
 
 def timestamp_seconds(value: str) -> float:
@@ -76,6 +93,74 @@ def find_video(video_dir: Path, video_id: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
+def eligible_segments(job: dict) -> list[tuple[int, dict, float, float, Path]]:
+    result = []
+    for cue_index, cue in enumerate(job["cues"]):
+        start = max(0.0, cue["start"] + job["shift_sec"] - job["margin_before"])
+        end = cue["end"] + job["shift_sec"] + job["margin_after"]
+        duration = end - start
+        if job["min_duration"] <= duration <= job["max_duration"]:
+            output = Path(job["output_dir"]) / "keypoints" / job["split"] / f"{job['video_id']}_{cue_index:05d}.npz"
+            result.append((cue_index, cue, start, end, output))
+    return result
+
+
+def segment_row(job: dict, cue_index: int, cue: dict, start: float, end: float, output: Path) -> dict:
+    return {
+        "id": f"matignon_{job['video_id']}_{cue_index:05d}",
+        "split": job["split"],
+        "source_type": "matignon",
+        "video_id": job["video_id"],
+        "signer_id": job["signer_id"],
+        "keypoints": str(output.resolve()),
+        "text_fr": cue["text_fr"],
+        "start": start,
+        "end": end,
+        "alignment": "weak_subtitle_shifted",
+    }
+
+
+def process_video(job: dict) -> dict:
+    eligible = eligible_segments(job)
+    if job["resume"] and eligible and all(output.exists() for *_, output in eligible):
+        return {
+            "video_id": job["video_id"],
+            "rows": [segment_row(job, *segment) for segment in eligible],
+            "reused": True,
+            "delegate": _WORKER_EXTRACTOR.delegate_name,
+        }
+
+    raw = _WORKER_EXTRACTOR.extract_video(
+        job["video"],
+        mirrored_source=False,
+        fps_target=job["fps"],
+    )
+    canonical = mediapipe_to_canonical(raw["keypoints"], raw["confidence"], raw["valid_mask"])
+    rows = []
+    for cue_index, cue, start, end, output in eligible:
+        first = max(0, int(round(start * float(raw["fps"]))))
+        last = min(len(canonical), int(round(end * float(raw["fps"]))))
+        if last - first < 4:
+            continue
+        if job["overwrite"] or not output.exists():
+            output.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(
+                output,
+                keypoints=canonical[first:last],
+                fps=raw["fps"],
+                source_video=str(job["video"]),
+                source_start=np.float32(start),
+                source_end=np.float32(end),
+            )
+        rows.append(segment_row(job, cue_index, cue, start, end, output))
+    return {
+        "video_id": job["video_id"],
+        "rows": rows,
+        "reused": False,
+        "delegate": _WORKER_EXTRACTOR.delegate_name,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create canonical Matignon-LSF phrase/keypoint manifests.")
     parser.add_argument("--subtitle-zip", type=Path, required=True)
@@ -91,6 +176,8 @@ def main() -> None:
     parser.add_argument("--delegate", choices=("gpu", "cpu"), default="gpu")
     parser.add_argument("--max-videos", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--resume", action="store_true", help="Skip videos whose eligible segment files already exist.")
+    parser.add_argument("--workers", type=int, default=1, help="Parallel video extractors. Use 2-3 on an 8-core CPU.")
     args = parser.parse_args()
 
     subtitles = read_subtitles(args.subtitle_zip)
@@ -100,53 +187,52 @@ def main() -> None:
         video_ids = video_ids[: args.max_videos]
     rows = []
     missing_videos = []
-    with MediaPipeTasksExtractor.create_with_fallback("checkpoints/mediapipe", args.delegate) as extractor:
-        for video_index, video_id in enumerate(video_ids, start=1):
-            video = find_video(args.video_dir, video_id)
-            if video is None:
-                missing_videos.append(video_id)
-                continue
-            signer_id = signer_map.get(video_id)
-            group_id = signer_id or video_id
-            split = split_name(group_id)
-            print(f"[{video_index}/{len(video_ids)}] {video_id}: extracting {video.name}", flush=True)
-            raw = extractor.extract_video(video, mirrored_source=False, fps_target=args.fps)
-            canonical = mediapipe_to_canonical(raw["keypoints"], raw["confidence"], raw["valid_mask"])
-            for cue_index, cue in enumerate(subtitles[video_id]):
-                start = max(0.0, cue["start"] + args.shift_sec - args.margin_before)
-                end = cue["end"] + args.shift_sec + args.margin_after
-                duration = end - start
-                if duration < args.min_duration or duration > args.max_duration:
-                    continue
-                first = max(0, int(round(start * float(raw["fps"]))))
-                last = min(len(canonical), int(round(end * float(raw["fps"]))))
-                if last - first < 4:
-                    continue
-                output = args.output_dir / "keypoints" / split / f"{video_id}_{cue_index:05d}.npz"
-                if args.overwrite or not output.exists():
-                    output.parent.mkdir(parents=True, exist_ok=True)
-                    np.savez_compressed(
-                        output,
-                        keypoints=canonical[first:last],
-                        fps=raw["fps"],
-                        source_video=str(video),
-                        source_start=np.float32(start),
-                        source_end=np.float32(end),
-                    )
-                rows.append(
-                    {
-                        "id": f"matignon_{video_id}_{cue_index:05d}",
-                        "split": split,
-                        "source_type": "matignon",
-                        "video_id": video_id,
-                        "signer_id": signer_id,
-                        "keypoints": str(output.resolve()),
-                        "text_fr": cue["text_fr"],
-                        "start": start,
-                        "end": end,
-                        "alignment": "weak_subtitle_shifted",
-                    }
-                )
+    jobs = []
+    for video_id in video_ids:
+        video = find_video(args.video_dir, video_id)
+        if video is None:
+            missing_videos.append(video_id)
+            continue
+        signer_id = signer_map.get(video_id)
+        jobs.append(
+            {
+                "video_id": video_id,
+                "video": str(video),
+                "cues": subtitles[video_id],
+                "signer_id": signer_id,
+                "split": split_name(signer_id or video_id),
+                "output_dir": str(args.output_dir),
+                "shift_sec": args.shift_sec,
+                "margin_before": args.margin_before,
+                "margin_after": args.margin_after,
+                "min_duration": args.min_duration,
+                "max_duration": args.max_duration,
+                "fps": args.fps,
+                "overwrite": args.overwrite,
+                "resume": args.resume,
+            }
+        )
+
+    effective_delegates = set()
+    with ProcessPoolExecutor(
+        max_workers=max(1, args.workers),
+        initializer=_init_worker,
+        initargs=("checkpoints/mediapipe", args.delegate),
+    ) as pool:
+        futures = {pool.submit(process_video, job): job["video_id"] for job in jobs}
+        completed = 0
+        for future in as_completed(futures):
+            video_id = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                print(f"[error] {video_id}: {exc}", flush=True)
+                raise
+            completed += 1
+            rows.extend(result["rows"])
+            effective_delegates.add(result["delegate"])
+            action = "reused" if result["reused"] else "extracted"
+            print(f"[{completed}/{len(jobs)}] {video_id}: {action} {len(result['rows'])} segments", flush=True)
 
     for split in ("train", "val", "test"):
         write_jsonl(args.output_dir / "manifests" / f"matignon_{split}.jsonl", (row for row in rows if row["split"] == split))
@@ -159,6 +245,10 @@ def main() -> None:
         "shift_sec": args.shift_sec,
         "margin_before": args.margin_before,
         "margin_after": args.margin_after,
+        "fps": args.fps,
+        "requested_delegate": args.delegate,
+        "effective_delegate": sorted(effective_delegates),
+        "workers": args.workers,
     }
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
