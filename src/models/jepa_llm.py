@@ -61,9 +61,12 @@ class JepaLlmPrefix(nn.Module):
         freeze_llm: bool = True,
         alignment_weight: float = 0.2,
         alignment_temperature: float = 0.07,
+        freeze_encoder: bool = False,
     ):
         super().__init__()
         self.encoder = encoder
+        if freeze_encoder:
+            self.encoder.requires_grad_(False)
         self.resampler = TemporalPrefixResampler(encoder_dim, prefix_tokens, resampler_heads)
         self.llm = llm
         self.alignment_weight = alignment_weight
@@ -88,6 +91,7 @@ class JepaLlmPrefix(nn.Module):
         skeleton_mask: torch.Tensor,
         input_ids: torch.Tensor,
         text_attention_mask: torch.Tensor,
+        prompt_length: int | None = None,
     ) -> SimpleNamespace:
         prefix = self.skeleton_prefix(keypoints, skeleton_mask)
         text_embeddings = self.llm.get_input_embeddings()(input_ids)
@@ -96,7 +100,10 @@ class JepaLlmPrefix(nn.Module):
         prefix_mask = torch.ones(prefix.shape[:2], dtype=text_attention_mask.dtype, device=inputs.device)
         attention_mask = torch.cat((prefix_mask, text_attention_mask), dim=1)
         prefix_labels = torch.full(prefix.shape[:2], -100, dtype=input_ids.dtype, device=inputs.device)
-        text_labels = input_ids.masked_fill(~text_attention_mask.bool(), -100)
+        text_labels = input_ids.clone()
+        if prompt_length is not None and prompt_length > 0:
+            text_labels[:, :prompt_length] = -100
+        text_labels = text_labels.masked_fill(~text_attention_mask.bool(), -100)
         labels = torch.cat((prefix_labels, text_labels), dim=1)
         output = self.llm(inputs_embeds=inputs, attention_mask=attention_mask, labels=labels)
 
@@ -131,6 +138,8 @@ class JepaLlmPrefix(nn.Module):
         max_new_tokens: int = 48,
         prompt_ids: torch.Tensor | None = None,
         repetition_penalty: float = 1.0,
+        num_beams: int = 1,
+        length_penalty: float = 1.0,
     ) -> torch.Tensor:
         prefix = self.skeleton_prefix(keypoints, skeleton_mask)
         batch_size = keypoints.shape[0]
@@ -150,48 +159,36 @@ class JepaLlmPrefix(nn.Module):
                 device=keypoints.device,
             )
 
-        finished = torch.zeros(batch_size, dtype=torch.bool, device=keypoints.device)
+        if hasattr(self.llm, "generate"):
+            text_embeddings = self.llm.get_input_embeddings()(generated)
+            inputs = torch.cat((prefix.to(text_embeddings.dtype), text_embeddings), dim=1)
+            attention_mask = torch.ones(inputs.shape[:2], dtype=torch.long, device=inputs.device)
+            
+            pad_token_id = getattr(self.llm.config, "pad_token_id", None)
+            if pad_token_id is None:
+                pad_token_id = eos_token_id
 
-        # 1. Initial forward pass to compute initial KV Cache
-        text_embeddings = self.llm.get_input_embeddings()(generated)
-        inputs = torch.cat((prefix.to(text_embeddings.dtype), text_embeddings), dim=1)
-        attention_mask = torch.ones(inputs.shape[:2], dtype=torch.long, device=inputs.device)
-
-        outputs = self.llm(inputs_embeds=inputs, attention_mask=attention_mask, use_cache=True)
-        past_key_values = outputs.past_key_values
-        next_token_logits = outputs.logits[:, -1].clone()
-        
-        if repetition_penalty != 1.0:
-            for i in range(batch_size):
-                for tok in torch.unique(generated[i]):
-                    val = next_token_logits[i, tok]
-                    if val > 0:
-                        next_token_logits[i, tok] = val / repetition_penalty
-                    else:
-                        next_token_logits[i, tok] = val * repetition_penalty
-
-        next_token = next_token_logits.argmax(dim=-1, keepdim=True)  # [Batch, 1]
-        generated = torch.cat((generated, next_token), dim=1)
-
-        if eos_token_id is not None:
-            finished |= next_token.squeeze(1).eq(eos_token_id)
-            if finished.all():
-                return generated
-
-        # 2. Subsequent autoregressive generation steps using KV Cache
-        for _ in range(max_new_tokens - 1):
-            next_embeds = self.llm.get_input_embeddings()(next_token)
-            attention_mask = torch.cat(
-                (attention_mask, torch.ones((batch_size, 1), dtype=torch.long, device=inputs.device)),
-                dim=1,
-            )
-
-            outputs = self.llm(
-                inputs_embeds=next_embeds,
+            # Call Hugging Face native generate
+            output_tokens = self.llm.generate(
+                inputs_embeds=inputs,
                 attention_mask=attention_mask,
-                past_key_values=past_key_values,
-                use_cache=True,
+                max_new_tokens=max_new_tokens,
+                repetition_penalty=repetition_penalty,
+                eos_token_id=eos_token_id,
+                pad_token_id=pad_token_id,
+                num_beams=num_beams,
+                length_penalty=length_penalty,
             )
+            # Concatenate prompt_ids to match expected return shape [batch, prompt_len + gen_len]
+            return torch.cat((generated, output_tokens.to(generated.device)), dim=1)
+        else:
+            # Fallback to manual greedy search loop for mock model in tests
+            finished = torch.zeros(batch_size, dtype=torch.bool, device=keypoints.device)
+            text_embeddings = self.llm.get_input_embeddings()(generated)
+            inputs = torch.cat((prefix.to(text_embeddings.dtype), text_embeddings), dim=1)
+            attention_mask = torch.ones(inputs.shape[:2], dtype=torch.long, device=inputs.device)
+
+            outputs = self.llm(inputs_embeds=inputs, attention_mask=attention_mask, use_cache=True)
             past_key_values = outputs.past_key_values
             next_token_logits = outputs.logits[:, -1].clone()
             
@@ -210,9 +207,42 @@ class JepaLlmPrefix(nn.Module):
             if eos_token_id is not None:
                 finished |= next_token.squeeze(1).eq(eos_token_id)
                 if finished.all():
-                    break
+                    return generated
 
-        return generated
+            for _ in range(max_new_tokens - 1):
+                next_embeds = self.llm.get_input_embeddings()(next_token)
+                attention_mask = torch.cat(
+                    (attention_mask, torch.ones((batch_size, 1), dtype=torch.long, device=inputs.device)),
+                    dim=1,
+                )
+
+                outputs = self.llm(
+                    inputs_embeds=next_embeds,
+                    attention_mask=attention_mask,
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+                past_key_values = outputs.past_key_values
+                next_token_logits = outputs.logits[:, -1].clone()
+                
+                if repetition_penalty != 1.0:
+                    for i in range(batch_size):
+                        for tok in torch.unique(generated[i]):
+                            val = next_token_logits[i, tok]
+                            if val > 0:
+                                next_token_logits[i, tok] = val / repetition_penalty
+                            else:
+                                next_token_logits[i, tok] = val * repetition_penalty
+
+                next_token = next_token_logits.argmax(dim=-1, keepdim=True)
+                generated = torch.cat((generated, next_token), dim=1)
+
+                if eos_token_id is not None:
+                    finished |= next_token.squeeze(1).eq(eos_token_id)
+                    if finished.all():
+                        break
+
+            return generated
 
     def adapter_state_dict(self) -> dict:
         return {

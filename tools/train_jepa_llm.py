@@ -69,7 +69,12 @@ def build_model(args, device: torch.device):
         freeze_llm=not args.unfreeze_llm,
         alignment_weight=args.alignment_weight,
         alignment_temperature=args.alignment_temperature,
+        freeze_encoder=args.freeze_encoder,
     ).to(device)
+    if args.resume_adapter and args.resume_adapter.exists():
+        print(f"Resuming adapter weights from {args.resume_adapter}")
+        checkpoint_adapter = torch.load(args.resume_adapter, map_location="cpu", weights_only=False)
+        model.load_adapter_state_dict(checkpoint_adapter["adapter"])
     if not args.unfreeze_llm:
         unfreeze_last_llm_layers(model.llm, args.unfreeze_last_layers)
     return model, tokenizer, config
@@ -86,6 +91,7 @@ def evaluate(model, loader, device) -> dict[str, float]:
             batch["skeleton_mask"].to(device),
             batch["input_ids"].to(device),
             batch["text_attention_mask"].to(device),
+            prompt_length=batch.get("prompt_length"),
         )
         size = len(batch["ids"])
         for key in totals:
@@ -116,6 +122,8 @@ def main() -> None:
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--unfreeze-llm", action="store_true")
     parser.add_argument("--unfreeze-last-layers", type=int, default=2)
+    parser.add_argument("--freeze-encoder", action="store_true", help="Freeze the visual encoder (JEPA context encoder) weights during training.")
+    parser.add_argument("--resume-adapter", type=Path, help="Path to an existing adapter checkpoint to resume training from.")
     args = parser.parse_args()
 
     seed_everything(42)
@@ -124,10 +132,10 @@ def main() -> None:
     collator = JepaLlmCollator(tokenizer, args.max_text_length)
     datasets = {
         "train": ConcatDataset(
-            [SkeletonTextDataset(str(path), target_fps=args.target_fps) for path in args.train_manifest]
+            [SkeletonTextDataset(str(path), target_fps=args.target_fps, augment=True) for path in args.train_manifest]
         ),
         "val": ConcatDataset(
-            [SkeletonTextDataset(str(path), target_fps=args.target_fps) for path in args.val_manifest]
+            [SkeletonTextDataset(str(path), target_fps=args.target_fps, augment=False) for path in args.val_manifest]
         ),
     }
     if not all(len(dataset) for dataset in datasets.values()):
@@ -196,6 +204,7 @@ def main() -> None:
                         batch["skeleton_mask"].to(device, non_blocking=True),
                         batch["input_ids"].to(device, non_blocking=True),
                         batch["text_attention_mask"].to(device, non_blocking=True),
+                        prompt_length=batch.get("prompt_length"),
                     )
                 if not torch.isfinite(output.loss):
                     raise FloatingPointError(

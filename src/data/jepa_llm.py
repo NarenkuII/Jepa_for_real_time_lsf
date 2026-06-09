@@ -22,6 +22,8 @@ class JepaLlmCollator:
             max_length=self.max_text_length,
             return_tensors="pt",
         )
+        prompt_ids = self.tokenizer.encode(self.prompt_prefix, add_special_tokens=True)
+        prompt_len = len(prompt_ids)
         return {
             "ids": [item["id"] for item in batch],
             "texts": [item["text"] for item in batch],
@@ -29,4 +31,5 @@ class JepaLlmCollator:
             "skeleton_mask": torch.from_numpy(skeleton_mask),
             "input_ids": encoded["input_ids"],
             "text_attention_mask": encoded["attention_mask"].bool(),
+            "prompt_length": prompt_len,
         }

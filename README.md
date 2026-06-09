@@ -261,11 +261,29 @@ associés à `text_fr`; voir `docs/jepa_llm_experiment.md`.
 
 ```bash
 .\.venv-jepa\Scripts\python.exe -m pip install -e ".[llm]"
+
+# Entraînement complet du projecteur JEPA-LLM avec augmentation de données et encodeur gelé
 .\.venv-jepa\Scripts\python.exe tools\train_jepa_llm.py \
-  --train-manifest data\phrases\train.jsonl \
-  --val-manifest data\phrases\val.jsonl
-.\.venv-jepa\Scripts\python.exe tools\realtime_jepa_llm.py \
-  --checkpoint runs\jepa_llm\best_adapter.pt
+  --jepa-checkpoint runs/graph_jepa_context_fix/best.pt \
+  --train-manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl \
+  --val-manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl \
+  --output-dir runs/jepa_llm_final \
+  --llm-name HuggingFaceTB/SmolLM2-360M-Instruct \
+  --alignment-weight 0.2 \
+  --alignment-temperature 0.07 \
+  --unfreeze-last-layers 2 \
+  --llm-learning-rate 1e-5 \
+  --learning-rate 1e-4 \
+  --max-epochs 20 \
+  --patience 8 \
+  --batch-size 2 \
+  --freeze-encoder
+
+# Évaluation du modèle avec beam search
+.\.venv-jepa\Scripts\python.exe tools\evaluate_jepa_llm.py \
+  --checkpoint runs/jepa_llm_final/best_adapter.pt \
+  --manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl \
+  --output-dir runs/jepa_llm_final/evaluation
 ```
 
 ```bash

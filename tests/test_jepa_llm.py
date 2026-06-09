@@ -25,7 +25,7 @@ class TinyCausalLM(torch.nn.Module):
     def get_input_embeddings(self):
         return self.embedding
 
-    def forward(self, inputs_embeds, attention_mask=None, labels=None):
+    def forward(self, inputs_embeds, attention_mask=None, labels=None, use_cache=None, past_key_values=None):
         logits = self.output(inputs_embeds)
         loss = None
         if labels is not None:
@@ -34,7 +34,7 @@ class TinyCausalLM(torch.nn.Module):
                 labels[:, 1:].reshape(-1),
                 ignore_index=-100,
             )
-        return SimpleNamespace(logits=logits, loss=loss)
+        return SimpleNamespace(logits=logits, loss=loss, past_key_values=past_key_values)
 
 
 def test_jepa_llm_prefix_forward_and_generate():
