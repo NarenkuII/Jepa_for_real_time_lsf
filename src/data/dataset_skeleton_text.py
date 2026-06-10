@@ -25,7 +25,7 @@ class SkeletonTextDataset:
 
     def _rotate_joint_group(self, augmented: np.ndarray, indices: list[int], center_xy: np.ndarray | None, angle_rad: float) -> None:
         for feat_idx in [0, 2, 4, 6]:
-            if feat_idx in [0, 2]:
+            if feat_idx == 0:
                 if center_xy is not None:
                     pts = augmented[:, indices, feat_idx:feat_idx+2] - center_xy[:, None, :]
                     augmented[:, indices, feat_idx:feat_idx+2] = self._rotate_points_2d(pts, angle_rad) + center_xy[:, None, :]
