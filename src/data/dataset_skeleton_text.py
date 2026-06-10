@@ -86,17 +86,20 @@ class SkeletonTextDataset:
         r_elbow = augmented[:, 3, :2].copy()
         self._rotate_joint_group(augmented, [5], r_elbow, angle_rw)
         
-        # Left hand max 12 degrees
+        # Left hand max 12 degrees around left wrist (joint 4)
         angle_lh = np.radians(np.random.uniform(-12.0, 12.0))
-        self._rotate_joint_group(augmented, list(range(GROUPS.left_hand.start, GROUPS.left_hand.stop)), None, angle_lh)
+        l_wrist = augmented[:, 4, :2].copy()
+        self._rotate_joint_group(augmented, list(range(GROUPS.left_hand.start, GROUPS.left_hand.stop)), l_wrist, angle_lh)
         
-        # Right hand max 12 degrees
+        # Right hand max 12 degrees around right wrist (joint 5)
         angle_rh = np.radians(np.random.uniform(-12.0, 12.0))
-        self._rotate_joint_group(augmented, list(range(GROUPS.right_hand.start, GROUPS.right_hand.stop)), None, angle_rh)
+        r_wrist = augmented[:, 5, :2].copy()
+        self._rotate_joint_group(augmented, list(range(GROUPS.right_hand.start, GROUPS.right_hand.stop)), r_wrist, angle_rh)
         
-        # Face max 3 degrees
+        # Face max 3 degrees around nose (GROUPS.face.start + 23)
         angle_f = np.radians(np.random.uniform(-3.0, 3.0))
-        self._rotate_joint_group(augmented, list(range(GROUPS.face.start, GROUPS.face.stop)), None, angle_f)
+        nose = augmented[:, GROUPS.face.start + 23, :2].copy()
+        self._rotate_joint_group(augmented, list(range(GROUPS.face.start, GROUPS.face.stop)), nose, angle_f)
         
         # 4. Local Scaling (Zoom)
         scale_l = np.random.uniform(0.98, 1.02)

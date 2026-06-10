@@ -21,6 +21,38 @@ from src.training.pretrain_jepa import build_model_from_config
 from src.utils.seed import seed_everything
 
 
+def send_telegram_message(text: str):
+    import urllib.request
+    import urllib.parse
+    import json
+    import os
+
+    bot_token = "8709323055:AAHew-VD5nqHGYIBbiA9hXcFKUmdCF09gkg"
+    chat_id = "6713161165"
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    try:
+        # Use university proxy to access the internet from the remote container
+        proxy_url = "http://cache.ha.univ-nantes.fr:3128"
+        proxies = {'http': proxy_url, 'https': proxy_url}
+        proxy_handler = urllib.request.ProxyHandler(proxies)
+        opener = urllib.request.build_opener(proxy_handler)
+        
+        data = urllib.parse.urlencode(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+        with opener.open(req, timeout=10) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            return res_data.get("ok", False)
+    except Exception as e:
+        # Don't fail the training if Telegram notification fails
+        print(f"Failed to send Telegram message: {e}", file=sys.stderr)
+        return False
+
+
 def load_transformers():
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -188,68 +220,89 @@ def main() -> None:
         )
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
-        while epoch < args.max_epochs and stale < args.patience and time.perf_counter() - started < args.max_minutes * 60:
-            model.train()
-            if not args.unfreeze_llm:
-                model.llm.eval()
-            totals = {"loss": 0.0, "generation_loss": 0.0, "alignment_loss": 0.0, "alignment_cosine": 0.0}
-            samples = 0
-            for batch in loaders["train"]:
-                if time.perf_counter() - started >= args.max_minutes * 60:
-                    break
-                optimizer.zero_grad(set_to_none=True)
-                with torch.amp.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
-                    output = model(
-                        batch["keypoints"].to(device, non_blocking=True),
-                        batch["skeleton_mask"].to(device, non_blocking=True),
-                        batch["input_ids"].to(device, non_blocking=True),
-                        batch["text_attention_mask"].to(device, non_blocking=True),
-                        prompt_length=batch.get("prompt_length"),
-                    )
-                if not torch.isfinite(output.loss):
-                    raise FloatingPointError(
-                        f"Non-finite JEPA-LLM loss for batch ids={batch['ids'][:4]}; "
-                        f"keypoint_abs_max={float(batch['keypoints'].abs().max())}"
-                    )
-                scaler.scale(output.loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(trainable, 1.0)
-                scaler.step(optimizer)
-                scaler.update()
-                size = len(batch["ids"])
-                for key in totals:
-                    totals[key] += float(getattr(output, key).detach()) * size
-                samples += size
-            epoch += 1
-            validation = evaluate(model, loaders["val"], device)
-            row = {
-                "epoch": epoch,
-                "elapsed_sec": round(time.perf_counter() - started, 2),
-                **{f"train_{key}": value / max(samples, 1) for key, value in totals.items()},
-                **{f"val_{key}": value for key, value in validation.items()},
-            }
-            writer.writerow(row)
-            handle.flush()
-            print(json.dumps(row), flush=True)
-            if validation["loss"] < best_loss:
-                best_loss = validation["loss"]
-                stale = 0
-                torch.save(
-                    {
-                        "adapter": model.adapter_state_dict(),
-                        "jepa_config": jepa_config,
-                        "llm_name": args.llm_name,
-                        "prefix_tokens": args.prefix_tokens,
-                        "resampler_heads": args.resampler_heads,
-                        "alignment_weight": args.alignment_weight,
-                        "alignment_temperature": args.alignment_temperature,
-                        "unfreeze_last_layers": args.unfreeze_last_layers,
-                        "metrics": row,
-                    },
-                    args.output_dir / "best_adapter.pt",
+        send_telegram_message("🚀 <b>JEPA-LLM training started</b>")
+        try:
+            while epoch < args.max_epochs and stale < args.patience and time.perf_counter() - started < args.max_minutes * 60:
+                model.train()
+                if not args.unfreeze_llm:
+                    model.llm.eval()
+                totals = {"loss": 0.0, "generation_loss": 0.0, "alignment_loss": 0.0, "alignment_cosine": 0.0}
+                samples = 0
+                for batch in loaders["train"]:
+                    if time.perf_counter() - started >= args.max_minutes * 60:
+                        break
+                    optimizer.zero_grad(set_to_none=True)
+                    with torch.amp.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+                        output = model(
+                            batch["keypoints"].to(device, non_blocking=True),
+                            batch["skeleton_mask"].to(device, non_blocking=True),
+                            batch["input_ids"].to(device, non_blocking=True),
+                            batch["text_attention_mask"].to(device, non_blocking=True),
+                            prompt_length=batch.get("prompt_length"),
+                        )
+                    if not torch.isfinite(output.loss):
+                        raise FloatingPointError(
+                            f"Non-finite JEPA-LLM loss for batch ids={batch['ids'][:4]}; "
+                            f"keypoint_abs_max={float(batch['keypoints'].abs().max())}"
+                        )
+                    scaler.scale(output.loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(trainable, 1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                    size = len(batch["ids"])
+                    for key in totals:
+                        totals[key] += float(getattr(output, key).detach()) * size
+                    samples += size
+                epoch += 1
+                validation = evaluate(model, loaders["val"], device)
+                row = {
+                    "epoch": epoch,
+                    "elapsed_sec": round(time.perf_counter() - started, 2),
+                    **{f"train_{key}": value / max(samples, 1) for key, value in totals.items()},
+                    **{f"val_{key}": value for key, value in validation.items()},
+                }
+                writer.writerow(row)
+                handle.flush()
+                print(json.dumps(row), flush=True)
+                
+                # Send Telegram notification for epoch completion
+                is_best = validation["loss"] < best_loss
+                status_text = (
+                    f"📈 <b>Epoch {epoch}/{args.max_epochs}</b>\n"
+                    f"• Train Loss: {row['train_loss']:.4f} (Gen: {row['train_generation_loss']:.4f}, Align: {row['train_alignment_loss']:.4f})\n"
+                    f"• Val Loss: {row['val_loss']:.4f} (Gen: {row['val_generation_loss']:.4f}, Align: {row['val_alignment_loss']:.4f})\n"
+                    f"• Elapsed: {row['elapsed_sec']:.1f}s"
                 )
-            else:
-                stale += 1
+                if is_best:
+                    status_text += "\n✨ <i>New best checkpoint saved!</i>"
+                send_telegram_message(status_text)
+                
+                if is_best:
+                    best_loss = validation["loss"]
+                    stale = 0
+                    torch.save(
+                        {
+                            "adapter": model.adapter_state_dict(),
+                            "jepa_config": jepa_config,
+                            "llm_name": args.llm_name,
+                            "prefix_tokens": args.prefix_tokens,
+                            "resampler_heads": args.resampler_heads,
+                            "alignment_weight": args.alignment_weight,
+                            "alignment_temperature": args.alignment_temperature,
+                            "unfreeze_last_layers": args.unfreeze_last_layers,
+                            "metrics": row,
+                        },
+                        args.output_dir / "best_adapter.pt",
+                    )
+                else:
+                    stale += 1
+        except Exception as e:
+            import traceback
+            error_msg = f"❌ <b>JEPA-LLM training crashed!</b>\n<code>{traceback.format_exc()}</code>"
+            send_telegram_message(error_msg[:4000])
+            raise e
+            
     summary = {
         "best_val_loss": best_loss,
         "epochs": epoch,
@@ -264,6 +317,14 @@ def main() -> None:
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary))
+    # Send final Telegram notification
+    final_text = (
+        f"✅ <b>JEPA-LLM training completed!</b>\n"
+        f"• Best Val Loss: {summary['best_val_loss']:.4f}\n"
+        f"• Epochs: {summary['epochs']}\n"
+        f"• Total Time: {summary['elapsed_sec']:.1f}s"
+    )
+    send_telegram_message(final_text)
 
 
 if __name__ == "__main__":
