@@ -232,7 +232,7 @@ def main() -> None:
                     if time.perf_counter() - started >= args.max_minutes * 60:
                         break
                     optimizer.zero_grad(set_to_none=True)
-                    with torch.amp.autocast("cuda", dtype=torch.float16, enabled=device.type == "cuda"):
+                    with torch.amp.autocast("cuda", dtype=torch.float32, enabled=device.type == "cuda"):
                         output = model(
                             batch["keypoints"].to(device, non_blocking=True),
                             batch["skeleton_mask"].to(device, non_blocking=True),
@@ -241,10 +241,14 @@ def main() -> None:
                             prompt_length=batch.get("prompt_length"),
                         )
                     if not torch.isfinite(output.loss):
-                        raise FloatingPointError(
-                            f"Non-finite JEPA-LLM loss for batch ids={batch['ids'][:4]}; "
-                            f"keypoint_abs_max={float(batch['keypoints'].abs().max())}"
+                        kp_abs_max = float(batch['keypoints'].abs().max())
+                        print(
+                            f"WARNING: Non-finite loss (skipping batch) ids={batch['ids'][:4]}; "
+                            f"keypoint_abs_max={kp_abs_max:.4f}",
+                            flush=True,
                         )
+                        optimizer.zero_grad(set_to_none=True)
+                        continue
                     scaler.scale(output.loss).backward()
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(trainable, 1.0)
