@@ -119,3 +119,21 @@ Pour résoudre définitivement le problème de surapprentissage après 3 époque
 * **Principe :** Remplacement de la boucle autoregressive customisée de `greedy_generate` par un appel à la méthode optimisée `.generate()` de Hugging Face.
 * **Avantages :** Permet d'intégrer le **Beam Search**, la **pénalité de longueur** et la **pénalité de répétition** nativement lors de l'inférence.
 * **Robustesse :** Intégration d'un fallback dynamique vers la boucle gloutonne classique pour conserver le fonctionnement des tests unitaires (qui s'appuient sur un modèle factice `TinyCausalLM`).
+
+---
+
+## 10. Étape 7 : Expérimentations d'Alignement Multimodal (Option B et Option C) (11-12 Juin 2026)
+
+Pour surmonter le surapprentissage et améliorer la traduction, nous avons mené deux séries d'expérimentations d'alignement multimodal JEPA-LLM (SmolLM2-360M) :
+
+### A. Option B : LLM et Encodeur Visuel 100 % Gelés
+* **Paramètres :** `--unfreeze-last-layers 0` (LLM figé), `--freeze-encoder`, `--alignment-weight 0.2`, 16 tokens de préfixe.
+* **Déroulement :** L'entraînement a duré 12 heures et s'est arrêté par *early stopping* à l'époque 51 (meilleur checkpoint à l'**époque 36**, avec une validation loss de **`3.3646`**).
+* **Résultats des tests de dépendance visuelle :**
+  * **Normal (avec vidéo) :** CHRF de **`0.1940`** (légère amélioration). Le modèle produit des phrases en français correct, mais s'effondre dans des modèles de phrases répétitives ("templates") sans rapport direct avec la vidéo (ex: *"ils ont été déployés dans le même pays..."*).
+  * **Masqué (vidéo à 0) :** Le CHRF s'effondre à **`0.0157`** et le modèle produit du code Python ou du bruit (ex: `() () () ()() 10)`).
+  * **Analyse :** La baisse massive de CHRF valide la dépendance visuelle. Néanmoins, figer le LLM à 100% avec un poids d'alignement fort (`0.2`) force toutes les représentations à converger vers le centroïde de texte moyen, provoquant un effondrement des prédictions sur quelques phrases-types.
+
+### B. Option C : Adaptabilité Légère du LLM & Alignement Réduit (En cours)
+* **Paramètres :** `--unfreeze-last-layers 2` (2 dernières couches du LLM débloquées), `--llm-learning-rate 2e-6` (taux ultra-faible pour préserver les connaissances), `--alignment-weight 0.05` (réduit pour éviter l'effondrement sémantique), et préfixe étendu à **24 tokens**.
+* **Observations initiales :** L'entraînement tourne de manière très stable sans NaN. À l'**époque 9**, la perte de validation globale est déjà descendue à **`2.8336`** (bien en dessous des `3.3646` de l'Option B). C'est un indicateur très fort que donner de la flexibilité sémantique au LLM tout en relâchant la contrainte d'alignement moyen permet une convergence de traduction bien plus propre.
