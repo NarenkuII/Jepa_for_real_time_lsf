@@ -29,6 +29,7 @@ reports/*
 !reports/.gitkeep
 .benchmark/
 *.mp4
+*.mp4
 *.avi
 *.mov
 *.npz
@@ -36,3 +37,30 @@ reports/*
 *.gif
 *.html
 *.csv
+
+# Large archives and backups
+*.tar.gz
+*.zip
+
+# Note-taking utility scripts
+clean_xiaomi_notes.js
+import_all_clean_notes_to_keep.js
+import_merged_notes_to_keep.js
+import_selected_notes_to_keep.js
+reorder_keep_chronological.js
+
+# Node.js files
+node_modules/
+package-lock.json
+package.json
+
+# Phone/ADB control helpers
+Launch_Phone_Control.bat
+adb_live_refresh.ps1
+adb_live_view.html
+codex_phone_screen.png
+codex_phone_screen_latest.png
+codex_phone_screen_unlocked.png
+
+# External codebases
+external/

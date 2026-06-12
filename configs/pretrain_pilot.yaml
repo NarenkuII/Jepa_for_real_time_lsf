@@ -6,7 +6,6 @@ data:
   window_size: 96
   joint_dropout: [0.20, 0.55]
   mirror_probability: 0.5
-  target_fps: 25.0
 jepa:
   encoder_type: graph_transformer
   d_model: 128

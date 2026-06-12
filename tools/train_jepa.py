@@ -67,18 +67,12 @@ def save_checkpoint(path: Path, model, optimizer, scaler, step: int, elapsed_sec
 def main() -> None:
     parser = argparse.ArgumentParser(description="Time-bounded Skeleton-JEPA pretraining.")
     parser.add_argument("--config", default="configs/pretrain_pilot.yaml")
-    parser.add_argument("--train-manifest", action="append", required=True)
-    parser.add_argument("--val-manifest", action="append", required=True)
+    parser.add_argument("--train-manifest", required=True)
+    parser.add_argument("--val-manifest", required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/jepa_pilot"))
     parser.add_argument("--max-minutes", type=float, default=60.0)
     parser.add_argument("--max-steps", type=int)
-    parser.add_argument(
-        "--schedule-steps",
-        type=int,
-        help="Use deterministic step-based LR/EMA scheduling instead of elapsed time.",
-    )
     parser.add_argument("--resume", type=Path)
-    parser.add_argument("--drop-face", action="store_true")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -98,16 +92,8 @@ def main() -> None:
         training=True,
         joint_dropout=(float(dropout_cfg[0]), float(dropout_cfg[1])),
         mirror_probability=float(config["data"].get("mirror_probability", 0.5)),
-        drop_face=args.drop_face,
-        target_fps=float(config["data"].get("target_fps", 25.0)),
     )
-    val_data = SkeletonWindowDataset(
-        args.val_manifest,
-        window_size=window_size,
-        training=False,
-        drop_face=args.drop_face,
-        target_fps=float(config["data"].get("target_fps", 25.0)),
-    )
+    val_data = SkeletonWindowDataset(args.val_manifest, window_size=window_size, training=False)
     loader_args = {
         "batch_size": int(pc["batch_size"]),
         "num_workers": int(pc.get("num_workers", 2)),
@@ -166,22 +152,12 @@ def main() -> None:
                 optimizer.zero_grad(set_to_none=True)
                 with torch.amp.autocast("cuda", dtype=torch.float16):
                     out = model(x, mask=mask, padding_mask=padding)
-                if not torch.isfinite(out["loss"]):
-                    raise FloatingPointError(
-                        f"Non-finite JEPA loss for batch ids={batch['id'][:4]}; "
-                        f"keypoint_abs_max={float(x.abs().max())}"
-                    )
                 scaler.scale(out["loss"]).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 scaler.step(optimizer)
                 scaler.update()
-                progress = min(
-                    1.0,
-                    step / args.schedule_steps
-                    if args.schedule_steps
-                    else elapsed / max_sec,
-                )
+                progress = min(1.0, elapsed / max_sec)
                 lr = base_lr * (0.1 + 0.9 * (math.cos(math.pi * progress) + 1.0) * 0.5)
                 for group in optimizer.param_groups:
                     group["lr"] = lr

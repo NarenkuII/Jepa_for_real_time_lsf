@@ -6,32 +6,27 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from src.data.manifest import read_jsonl
-from src.keypoints.canonical import GROUPS, mirror_canonical_features
+from src.keypoints.canonical import mirror_canonical_features
 
 
 class SkeletonWindowDataset(Dataset):
     def __init__(
         self,
-        manifest: str | Path | list[str | Path],
+        manifest: str | Path,
         window_size: int = 96,
         training: bool = True,
         seed: int = 42,
         joint_dropout: tuple[float, float] = (0.0, 0.0),
         mirror_probability: float = 0.0,
-        drop_face: bool = False,
-        target_fps: float | None = None,
     ):
-        manifests = manifest if isinstance(manifest, list) else [manifest]
-        self.rows = [row for path in manifests for row in read_jsonl(path)]
+        self.rows = read_jsonl(manifest)
         self.window_size = window_size
         self.training = training
         self.seed = seed
         self.joint_dropout = joint_dropout
         self.mirror_probability = mirror_probability
-        self.drop_face = drop_face
-        self.target_fps = target_fps
         if not self.rows:
-            raise ValueError(f"Empty manifest(s): {manifests}")
+            raise ValueError(f"Empty manifest: {manifest}")
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -40,16 +35,6 @@ class SkeletonWindowDataset(Dataset):
         row = self.rows[index]
         with np.load(row["keypoints"], allow_pickle=False) as payload:
             sequence = payload["keypoints"].astype(np.float32)
-            source_fps = float(payload["fps"]) if "fps" in payload else float(row.get("fps", 25.0))
-        if self.target_fps and source_fps > 0 and abs(source_fps - self.target_fps) > 1e-3:
-            target_frames = max(1, int(round(len(sequence) * self.target_fps / source_fps)))
-            positions = np.linspace(0, len(sequence) - 1, target_frames)
-            left = np.floor(positions).astype(int)
-            right = np.minimum(left + 1, len(sequence) - 1)
-            weight = (positions - left).astype(np.float32)[:, None, None]
-            sequence = ((1.0 - weight) * sequence[left] + weight * sequence[right]).astype(np.float32)
-        if self.drop_face:
-            sequence[:, GROUPS.face] = 0.0
         frames = sequence.shape[0]
         if frames >= self.window_size:
             if self.training:

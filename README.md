@@ -21,28 +21,6 @@ Deux types de données sont supportés :
 - Type A : vidéos non annotées, utilisées pour pré-entraîner Skeleton-JEPA.
 - Type B : vidéos ou segments alignés avec une phrase française, utilisés pour l'alignement skeleton-text optionnel et le fine-tuning génératif.
 
-## Pipeline principal direct
-
-La voie principale ne dépend ni de glosses ni de CTC :
-
-```text
-Type A non annoté + Matignon non annoté
--> pré-entraînement Graph Skeleton-JEPA
--> alphabet isolé : clip A -> "A"
--> alphabet synthétique : clips A+B+C -> "ABC"
--> alphabet continu réel : clip AABB / mot épelé -> texte
--> Matignon : segment LSF continu -> phrase française
--> fine-tuning mixte avec un encodeur JEPA partagé
--> Transformer caractère -> texte direct
-```
-
-Le tokenizer caractère partage le même vocabulaire pour `"A"`, `"ABC"` et les
-phrases françaises. Les sources sont pondérées séparément afin que Matignon
-n'écrase pas les exemples d'épellation. Le CTC reste une expérience auxiliaire
-sur une branche séparée, pas la cible de `main`.
-
-Voir [`docs/direct_mixed_pipeline.md`](docs/direct_mixed_pipeline.md).
-
 ## Objectif génératif
 
 La tâche principale est une traduction directe `keypoints -> phrase française` avec une architecture encoder-decoder et une cross entropy token-level avec teacher forcing.
@@ -175,30 +153,6 @@ python tools/train_jepa.py \
   --max-minutes 10
 ```
 
-Plusieurs sources peuvent être passées en répétant l'option :
-
-```bash
-python tools/train_jepa.py \
-  --train-manifest data/type_a_canonical/manifests/type_a_train.jsonl \
-  --train-manifest data/matignon_canonical/manifests/matignon_train.jsonl \
-  --val-manifest data/type_a_canonical/manifests/type_a_val.jsonl \
-  --val-manifest data/matignon_canonical/manifests/matignon_val.jsonl \
-  --output-dir runs/jepa_type_a_matignon \
-  --max-minutes 60
-```
-
-Mediapi-RGB peut être téléchargé puis préparé avec une seule commande après
-acceptation de sa licence ORTOLANG :
-
-```powershell
-.\.venv-jepa\Scripts\python.exe tools\bootstrap_lsf_datasets.py `
-  --open-ortolang --watch-downloads
-```
-
-Voir [`docs/mediapi_rgb.md`](docs/mediapi_rgb.md). Le manifest
-`mediapi_rgb_train.jsonl` sert à JEPA et `mediapi_rgb_text_train.jsonl` au
-décodage direct vidéo LSF vers français.
-
 Conversion et fine-tuning alphabet avec splits séparés par signeur :
 
 ```bash
@@ -227,45 +181,6 @@ python -m src.training.train_skeleton_text_alignment --config configs/train_skel
 python -m src.training.finetune_skeleton_to_text --config configs/finetune_skeleton_to_text.yaml
 ```
 
-### Fine-tuning mixte sans glosses
-
-Préparer Matignon-LSF :
-
-```bash
-python tools/download_matignon_videos.py \
-  --subtitle-zip "external/Matignon-LSF/preprocess_subtitles/data/données_V2.0.0.0/gold_audio_aligned_cr_sentences_based.zip"
-
-python tools/prepare_matignon_lsf.py \
-  --subtitle-zip "external/Matignon-LSF/preprocess_subtitles/data/données_V2.0.0.0/gold_audio_aligned_cr_sentences_based.zip" \
-  --video-dir data/matignon_raw/cropped \
-  --output-dir data/matignon_canonical
-```
-
-Voir [`docs/matignon_lsf.md`](docs/matignon_lsf.md) pour l'alignement faible,
-le crop vidéo et les splits par interprète.
-
-```bash
-python tools/build_direct_alphabet_sequences.py \
-  --source-root data/alphabet_canonical \
-  --output-dir data/direct_alphabet
-
-python tools/train_mixed_direct_text.py \
-  --checkpoint runs/jepa_type_a_matignon/best.pt \
-  --train-manifest data/alphabet_canonical/manifests/alphabet_train.jsonl \
-  --train-manifest data/direct_alphabet/manifests/direct_alphabet_train.jsonl \
-  --train-manifest data/matignon_canonical/manifests/matignon_train.jsonl \
-  --train-manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl \
-  --val-manifest data/alphabet_canonical/manifests/alphabet_val.jsonl \
-  --val-manifest data/direct_alphabet/manifests/direct_alphabet_val.jsonl \
-  --val-manifest data/matignon_canonical/manifests/matignon_val.jsonl \
-  --val-manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl \
-  --output-dir runs/mixed_direct_text \
-  --max-minutes 60
-```
-
-Les manifests de vrais clips `ABC`, `AABB` et mots épelés peuvent être ajoutés
-avec d'autres options `--train-manifest`/`--val-manifest`.
-
 ## Inférence
 
 ### Alphabet en temps réel
@@ -288,23 +203,87 @@ tandis que le classifieur PyTorch utilise CUDA.
 `LIVE` utilise seulement les 24 frames les plus récentes et suit rapidement les
 transitions. `STABLE` attend deux confirmations afin de réduire le clignotement.
 
-### Texte direct en temps réel
-
-```bash
-python tools/realtime_mixed_direct_text.py \
-  --checkpoint runs/mixed_direct_text/best.pt \
-  --camera 0
-```
-
-Le segment est décodé directement en texte après une absence prolongée des
-mains. Il n'existe aucune étape de glosses ou de CTC.
-
 Matrice de confusion du jeu test :
 
 ```bash
 .\.venv-jepa\Scripts\python.exe tools\evaluate_alphabet.py \
   --checkpoint runs\alphabet_graph_jepa_context_fix\best.pt \
   --output-dir reports\alphabet_graph_jepa
+```
+
+### Alphabet continu avec CTC
+
+Le générateur crée des recettes de séquences sans recopier les fichiers de
+keypoints. Il accepte des chaînes aléatoires ou un fichier UTF-8 contenant un
+mot/une phrase par ligne :
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\build_continuous_alphabet_dataset.py \
+  --train-count 4000 --val-count 400 --test-count 400
+
+.\.venv-jepa\Scripts\python.exe tools\build_continuous_alphabet_dataset.py \
+  --text-corpus data\my_words.txt --max-letters 24
+```
+
+Les espaces et la ponctuation sont gardés en métadonnées mais les cibles CTC
+restent `A-Z`. Entraînement et contrôle `AABB` :
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\train_continuous_ctc.py \
+  --checkpoint runs\graph_jepa_context_fix\best.pt \
+  --output-dir runs\alphabet_continuous_ctc \
+  --max-minutes 60
+
+.\.venv-jepa\Scripts\python.exe tools\evaluate_continuous_ctc.py \
+  --checkpoint runs\alphabet_continuous_ctc\best.pt
+```
+
+Webcam, y compris DroidCam exposée comme caméra virtuelle :
+
+```bash
+.\.venv-jepa\Scripts\python.exe tools\realtime_continuous_alphabet.py --list-cameras
+.\.venv-jepa\Scripts\python.exe tools\realtime_continuous_alphabet.py \
+  --camera 1 --backend dshow \
+  --checkpoint runs\alphabet_continuous_ctc\best.pt
+```
+
+Le texte `LIVE` est redécodé sur le segment courant et évolue donc à chaque
+nouvelle lettre. Une absence prolongée des mains clôt le segment. Le chargeur
+accepte aussi un manifest de vrais clips continus avec les champs
+`id`, `split`, `keypoints` et `text`; ceux-ci sont préférables aux transitions
+interpolées pour la validation finale.
+
+### Expérience JEPA vers LLM
+
+La branche expérimentale peut convertir la mémoire JEPA en soft-prefix tokens
+pour un petit modèle de langue causal. Elle exige des manifests de clips LSF
+associés à `text_fr`; voir `docs/jepa_llm_experiment.md`.
+
+```bash
+.\.venv-jepa\Scripts\python.exe -m pip install -e ".[llm]"
+
+# Entraînement complet du projecteur JEPA-LLM avec augmentation de données et encodeur gelé
+.\.venv-jepa\Scripts\python.exe tools\train_jepa_llm.py \
+  --jepa-checkpoint runs/graph_jepa_context_fix/best.pt \
+  --train-manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_train.jsonl \
+  --val-manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_val.jsonl \
+  --output-dir runs/jepa_llm_final \
+  --llm-name HuggingFaceTB/SmolLM2-360M-Instruct \
+  --alignment-weight 0.2 \
+  --alignment-temperature 0.07 \
+  --unfreeze-last-layers 2 \
+  --llm-learning-rate 1e-5 \
+  --learning-rate 1e-4 \
+  --max-epochs 20 \
+  --patience 8 \
+  --batch-size 2 \
+  --freeze-encoder
+
+# Évaluation du modèle avec beam search
+.\.venv-jepa\Scripts\python.exe tools\evaluate_jepa_llm.py \
+  --checkpoint runs/jepa_llm_final/best_adapter.pt \
+  --manifest data/mediapi_rgb_canonical/manifests/mediapi_rgb_text_test.jsonl \
+  --output-dir runs/jepa_llm_final/evaluation
 ```
 
 ```bash
@@ -349,10 +328,6 @@ Les métriques incluent JEPA latent loss, variance embeddings, normes, collapse 
 - Un petit sous-ensemble vérifié manuellement est recommandé.
 - La qualité dépend fortement de MediaPipe, de la visibilité des mains, du visage, du regard et du cadrage.
 - Le temps réel est expérimental si le modèle est entraîné seulement sur segments phrase-level.
-- Matignon fournit une supervision faible : les sous-titres suivent la parole
-  française et doivent être décalés ou révisés pour couvrir l'interprétation.
-- Pour l'évaluation finale, les splits Matignon doivent être séparés par
-  interprète grâce à un fichier `video_id,signer_id`.
 
 ## Extensions futures
 

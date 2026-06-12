@@ -34,4 +34,3 @@ class TransformerTextDecoder(nn.Module):
             memory_key_padding_mask=memory_padding_mask,
         )
         return self.out(h)
-

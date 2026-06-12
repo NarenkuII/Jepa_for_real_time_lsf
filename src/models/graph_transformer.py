@@ -87,6 +87,9 @@ class SpatialTemporalGraphTransformer(nn.Module):
                 tokens,
                 src_mask=self.spatial_mask,
             )
+            # A graph mask plus a key-padding mask can leave an invalid query
+            # with no legal key and produce NaNs. Zeroing invalid tokens before
+            # and after each layer blocks their values without that failure.
             tokens = tokens.masked_fill(spatial_padding.unsqueeze(-1), 0.0)
         tokens = self.spatial_norm(tokens)
 

@@ -59,4 +59,3 @@ class SkeletonToText(nn.Module):
             if torch.all(next_id.squeeze(1).eq(self.eos_id)):
                 break
         return tokens
-
