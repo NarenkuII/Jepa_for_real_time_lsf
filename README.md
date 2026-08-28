@@ -1,8 +1,16 @@
-# Skeleton-JEPA for Real-Time LSF Recognition
+# Skeleton-JEPA for Real-Time LSF Recognition (Experimental R&D)
 
-Research pipeline adapting Joint-Embedding Predictive Architecture (JEPA) to French Sign Language (LSF) skeleton sequences for self-supervised representation learning and direct keypoints-to-French text translation.
+An experimental research pipeline exploring the application of Joint-Embedding Predictive Architecture (JEPA) to French Sign Language (LSF) skeleton sequences for self-supervised representation learning and keypoint-to-text translation.
 
-The architecture operates directly on 2D/3D body, hand, and facial keypoints rather than raw video pixels.
+## Context & Background
+
+This exploratory repository is a personal follow-up to the **[HearMyHands (HMH)](https://hearmyhands.asia/)** project ([GitHub repository](https://github.com/nmqx/hearmyhands)), where I served as team lead. 
+
+Following the final project deliverables, I wanted to benchmark whether a self-supervised JEPA framework operating on spatial-temporal skeleton coordinates could capture latent sign transitions better than conventional supervised architectures.
+
+### Outcomes & Findings
+- **Mixed Results / Data Scarcity**: While the model successfully learns structured representations on curated/synthetic sets, downstream translation and zero-shot sign generalization suffered significantly from the lack of large-scale, diverse, continuous LSF video datasets.
+- **Key Takeaway**: Self-supervised skeleton-JEPA requires substantially larger corpus diversity (thousands of continuous signers) to avoid overfitting and generalize robustly across unseen signing styles.
 
 ## Pipeline Overview
 
