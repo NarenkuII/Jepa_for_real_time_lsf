@@ -9,8 +9,8 @@ This exploratory repository is a personal follow-up to the **[HearMyHands (HMH)]
 Following the final project deliverables, I wanted to benchmark whether a self-supervised JEPA framework operating on spatial-temporal skeleton coordinates could capture latent sign transitions better than conventional supervised architectures.
 
 ### Outcomes & Findings
-- **Mixed Results / Data Scarcity**: While the model successfully learns structured representations on curated/synthetic sets, downstream translation and zero-shot sign generalization suffered significantly from the lack of large-scale, diverse, continuous LSF video datasets.
-- **Key Takeaway**: Self-supervised skeleton-JEPA requires substantially larger corpus diversity (thousands of continuous signers) to avoid overfitting and generalize robustly across unseen signing styles.
+- **Negative / Inconclusive Results**: The model struggled to converge and failed to yield satisfactory results even on the training dataset itself, primarily due to severe data scarcity, keypoint jitter, and insufficient scale for self-supervised latent prediction.
+- **Key Takeaway**: Skeleton-JEPA is highly sensitive to representation collapse when trained without massive, diverse continuous datasets (hundreds of hours of continuous multi-signer footage). The codebase remains as an exploratory testbed documenting the architecture and benchmarked hypotheses.
 
 ## Pipeline Overview
 
